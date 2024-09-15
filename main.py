@@ -108,7 +108,7 @@ async def on_ready():
     print(f"{bot.user} has connected to Discord!")
 
 
-@bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\"")
+@bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
 async def add_game(ctx, game_name):
     try:
         int(game_name)
@@ -135,10 +135,33 @@ async def add_game(ctx, game_name):
     await ctx.message.delete()
 
 
-@bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5"
+@bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. "
                                "It is possible to use the game's ID instead of its name as well.")
 async def rate_game(ctx, game_name, score):
     print(ctx)
+
+
+@bot.command(name="overview", help="Displays on overview of the most interesting games. Example: !display. "
+                                   "Will update the last occurrence of this message when the data gets updated.")
+async def overview(ctx):
+    embed = discord.Embed(title="Games Overview")
+
+    game_dataset = read_dataset()
+    # Try to narrow down the dataset to a specific server
+    server_id = str(ctx.guild.id)
+    if server_id not in game_dataset:
+        await ctx.send("No games registered for this server yet.")
+        return
+    game_dataset = game_dataset[server_id]  # type: dict
+
+    for game_data in game_dataset.values():
+        embed.add_field(
+            name=game_data["name"],
+            value=f"",
+            inline=False
+        )
+
+    await ctx.send(embed=embed)
 
 
 @bot.event
