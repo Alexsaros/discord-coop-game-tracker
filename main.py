@@ -153,7 +153,7 @@ def generate_overview_embed(server_id):
 
     sorted_games = sort_games_by_score(game_dataset)
 
-    embed = discord.Embed(title="Games Overview")
+    embed = discord.Embed(title="Games Overview", color=discord.Color.blue())
     for game_data, score in sorted_games:
         description = ""
         tags = game_data.get("tags", [])
