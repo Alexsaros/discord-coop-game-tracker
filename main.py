@@ -29,9 +29,11 @@ class GameData:
     name = ""
     submitter = ""
     votes = None
+    tags = None
 
     def __init__(self, json_data=None):
         self.votes = {}
+        self.tags = []
         if json_data:
             self.load_json(json_data)
 
@@ -40,6 +42,7 @@ class GameData:
         self.name = json_data["name"]
         self.submitter = json_data["submitter"]
         self.votes = json_data.get("votes", {})
+        self.tags = json_data.get("tags", [])
 
     def to_json(self):
         return {
@@ -47,6 +50,7 @@ class GameData:
             "name": self.name,
             "submitter": self.submitter,
             "votes": self.votes,
+            "tags": self.tags,
         }
 
     def __str__(self):
@@ -151,9 +155,14 @@ def generate_overview_embed(server_id):
 
     embed = discord.Embed(title="Games Overview")
     for game_data, score in sorted_games:
+        description = ""
+        tags = game_data.get("tags", [])
+        if len(tags) > 0:
+            description += "\n".join(tags)
+
         embed.add_field(
             name=f"{game_data['id']} - {game_data['name']}",
-            value=f"",
+            value=description,
             inline=False
         )
     return embed
@@ -268,6 +277,29 @@ async def overview(ctx):
     overview_data[str(ctx.guild.id)] = message.id
     with open(OVERVIEW_FILE, "w") as file:
         json.dump(overview_data, file, indent=4)
+
+    await update_overview(ctx)
+    await ctx.message.delete()
+
+
+@bot.command(name="tag", help="Adds an informative tag to a game. Example: !tag \"game name\" \"PvP only\".")
+async def tag(ctx, game_name, tag_text):
+    server_id = str(ctx.guild.id)
+
+    game_dataset = read_dataset()
+    game_data = filter_game_dataset(game_dataset, server_id, game_name)
+    if game_data is None:
+        print(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    # Update the tags and save the new game data
+    game_data.tags.append(tag_text)
+    game_dataset[server_id][str(game_data.id)] = game_data.to_json()
+    save_dataset(game_dataset)
+
+    await update_overview(ctx)
+    await ctx.message.delete()
 
 
 @bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
