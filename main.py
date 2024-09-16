@@ -18,6 +18,7 @@ OVERVIEW_FILE = "overview.json"   # Holds the ID of the message displaying the o
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
