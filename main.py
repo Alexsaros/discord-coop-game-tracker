@@ -14,6 +14,7 @@ PUBLIC_KEY = os.getenv("PUBLIC_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 DATASET_FILE = "dataset.json"
+OVERVIEW_FILE = "overview.json"   # Holds the ID of the message displaying the overview for each server
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -58,14 +59,13 @@ def read_dataset():
         dataset = {"count": 0}
     else:
         with open(DATASET_FILE, "r") as file:
-            dataset = json.load(file)
+            dataset = json.load(file)   # type: dict[str, int, dict]
 
     return dataset
 
 
 def save_dataset(dataset: dict):
     with open(DATASET_FILE, "w") as file:
-        print(dataset)
         json.dump(dataset, file, indent=4)
 
 
@@ -87,7 +87,6 @@ def filter_game_dataset(dataset: dict, server_id, game_name):
             game_data = dataset[game_id]
             return GameData(json_data=game_data)
     except ValueError:
-        print(dataset)
         for game_data in dataset.values():
             if game_data["name"] == game_name:
                 return GameData(json_data=game_data)
@@ -101,6 +100,42 @@ def set_game_in_dataset(dataset: dict, server_id, game_data: GameData):
 
     dataset[server_id][game_data.id] = game_data.to_json()
     return dataset
+
+
+def generate_overview_embed(server_id):
+    server_id = str(server_id)
+
+    game_dataset_servers = read_dataset()
+    # Try to narrow down the dataset to a specific server
+    if server_id not in game_dataset_servers:
+        return None
+    game_dataset = game_dataset_servers[server_id]
+
+    embed = discord.Embed(title="Games Overview")
+    for game_data in game_dataset.values():
+        embed.add_field(
+            name=game_data["name"],
+            value=f"",
+            inline=False
+        )
+    return embed
+
+
+async def update_overview(ctx):
+    server_id = str(ctx.guild.id)
+
+    if not os.path.exists(OVERVIEW_FILE):
+        return
+    with open(OVERVIEW_FILE, "r") as file:
+        overview_messages = json.load(file)
+
+    if server_id not in overview_messages:
+        return
+    overview_message_id = overview_messages[server_id]
+    overview_message = await ctx.fetch_message(overview_message_id)
+
+    updated_overview_embed = generate_overview_embed(server_id)
+    await overview_message.edit(embed=updated_overview_embed)
 
 
 @bot.event
@@ -126,12 +161,13 @@ async def add_game(ctx, game_name):
 
     # Create a JSON for the new game, add it to the server's dataset, and save the dataset
     game_dataset["count"] += 1
-    game_data = GameData(game_dataset["count"])
+    game_data = GameData(game_id=game_dataset["count"])
     game_data.name = game_name
     game_data.submitter = str(ctx.author)
     game_dataset = set_game_in_dataset(game_dataset, ctx.guild.id, game_data)
     save_dataset(game_dataset)
 
+    await update_overview(ctx)
     await ctx.message.delete()
 
 
@@ -139,34 +175,37 @@ async def add_game(ctx, game_name):
                                "It is possible to use the game's ID instead of its name as well.")
 async def rate_game(ctx, game_name, score):
     print(ctx)
+    await update_overview(ctx)
+    await ctx.message.delete()
 
 
 @bot.command(name="overview", help="Displays on overview of the most interesting games. Example: !display. "
                                    "Will update the last occurrence of this message when the data gets updated.")
 async def overview(ctx):
-    embed = discord.Embed(title="Games Overview")
-
-    game_dataset = read_dataset()
-    # Try to narrow down the dataset to a specific server
-    server_id = str(ctx.guild.id)
-    if server_id not in game_dataset:
+    overview_embed = generate_overview_embed(ctx.guild.id)
+    if overview_embed is None:
         await ctx.send("No games registered for this server yet.")
         return
-    game_dataset = game_dataset[server_id]  # type: dict
 
-    for game_data in game_dataset.values():
-        embed.add_field(
-            name=game_data["name"],
-            value=f"",
-            inline=False
-        )
+    message = await ctx.send(embed=overview_embed)
 
-    await ctx.send(embed=embed)
+    # Retrieve the mapping of server IDs to their overview message IDs
+    if not os.path.exists(OVERVIEW_FILE):
+        print(f"{OVERVIEW_FILE} does not exist.")
+        overview_data = {}
+    else:
+        with open(OVERVIEW_FILE, "r") as file:
+            overview_data = json.load(file)   # type: dict[str, int]
+
+    # Store the new message ID
+    overview_data[str(ctx.guild.id)] = message.id
+    with open(OVERVIEW_FILE, "w") as file:
+        json.dump(overview_data, file, indent=4)
 
 
 @bot.event
 async def on_command_error(ctx, error):
-    print("Encountered command error:")
+    print("\nEncountered command error:")
     print(ctx)
     print(error)
     print(type(error))
@@ -181,7 +220,7 @@ async def on_command_error(ctx, error):
 async def on_error(event, *args, **kwargs):
     if event == "on_command_error":
         return
-    print("Encountered error:")
+    print("\nEncountered error:")
     print(event)
     print(args)
     print(kwargs)
