@@ -248,6 +248,29 @@ async def overview(ctx):
         json.dump(overview_data, file, indent=4)
 
 
+@bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
+async def kick(ctx, member_name):
+    member_name = member_name.lower()
+    if member_name in ["co-op game tracker", "coop game tracker"]:
+        await ctx.send("I won't kick myself, fool.")
+        return
+
+    if member_name in ["alexsaro"]:
+        await ctx.send("Don't you try to kick my creator!")
+        return
+
+    member_names = [member.name for member in ctx.guild.members if not member.bot]
+    if member_name not in member_names:
+        await ctx.send(f"Could not find member \"{member_name}\".")
+        return
+
+    for member in ctx.guild.members:
+        if member_name == member.name:
+            member_id = member.id
+            await ctx.send(f"Hey, <@{member_id}>. <@{ctx.author.id}> just tried to kick you. I'm sorry you had to find out this way.")
+            return
+
+
 @bot.event
 async def on_command_error(ctx, error):
     print("\nEncountered command error:")
