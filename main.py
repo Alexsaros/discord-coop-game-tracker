@@ -115,6 +115,29 @@ def add_game_to_dataset(dataset: dict, server_id, game_data: GameData, set_game_
     return dataset
 
 
+def sort_games_by_score(game_dataset):
+    member_count = game_dataset["members"]
+    game_scores = []
+
+    for game_data in game_dataset.values():
+        # Skip metadata (i.e. count, members)
+        if isinstance(game_data, int):
+            continue
+
+        # Count the score for this game
+        total_score = 0
+        votes = game_data.get("votes", {})
+        for voter, score in votes.items():
+            total_score += score
+        # Use a score of 5 for the non-voters
+        non_voters = member_count - len(votes)
+        total_score += non_voters * 5
+
+        game_scores.append((game_data, total_score))
+
+    return sorted(game_scores, key=lambda x: x[1], reverse=True)
+
+
 def generate_overview_embed(server_id):
     server_id = str(server_id)
 
@@ -124,12 +147,10 @@ def generate_overview_embed(server_id):
         return None
     game_dataset = game_dataset_servers[server_id]
 
-    embed = discord.Embed(title="Games Overview")
-    for game_data in game_dataset.values():
-        # Skip metadata (i.e. count, members)
-        if isinstance(game_data, int):
-            continue
+    sorted_games = sort_games_by_score(game_dataset)
 
+    embed = discord.Embed(title="Games Overview")
+    for game_data, score in sorted_games:
         embed.add_field(
             name=f"{game_data['id']} - {game_data['name']}",
             value=f"",
@@ -196,7 +217,8 @@ async def add_game(ctx, game_name):
 
 
 @bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. "
-                               "It is possible to use the game's ID instead of its name as well.")
+                               "It is possible to use the game's ID instead of its name as well. "
+                               "If you haven't voted for a game, your vote will default to 5.")
 async def rate_game(ctx, game_name, score):
     server_id = str(ctx.guild.id)
 
