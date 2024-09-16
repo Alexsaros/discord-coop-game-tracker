@@ -24,16 +24,13 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 class GameData:
 
-    id = None
+    id = -1
     name = ""
     submitter = ""
+    votes = None
 
-    def __init__(self, game_id=None, json_data=None):
-        if game_id is None and json_data is None:
-            raise Exception("Either game_id or json_data is required when creating a GameData object.")
-
-        if game_id:
-            self.id = game_id
+    def __init__(self, json_data=None):
+        self.votes = {}
         if json_data:
             self.load_json(json_data)
 
@@ -41,6 +38,7 @@ class GameData:
         self.id = json_data["id"]
         self.name = json_data["name"]
         self.submitter = json_data["submitter"]
+        self.votes = json_data.get("votes", {})
 
     def to_json(self):
         return {
@@ -56,7 +54,7 @@ class GameData:
 def read_dataset():
     if not os.path.exists(DATASET_FILE):
         print(f"{DATASET_FILE} does not exist.")
-        dataset = {"count": 0}
+        dataset = {}
     else:
         with open(DATASET_FILE, "r") as file:
             dataset = json.load(file)   # type: dict[str, int, dict]
@@ -69,16 +67,19 @@ def save_dataset(dataset: dict):
         json.dump(dataset, file, indent=4)
 
 
-def filter_game_dataset(dataset: dict, server_id, game_name):
+def filter_game_dataset(game_dataset_servers: dict, server_id, game_name):
     """
     Checks if the given dataset contains the given game, and returns the game's data as a GameData object.
     Returns None if the game was not found.
     """
     # Narrow down the dataset to a specific server
     server_id = str(server_id)
-    if server_id not in dataset:
-        dataset[server_id] = {}
-    dataset = dataset[server_id]
+    if server_id not in game_dataset_servers:
+        game_dataset_servers[server_id] = {
+            "count": 0,
+            "members": 1,
+        }
+    dataset = game_dataset_servers[server_id]
 
     try:
         # Check if the game was passed as ID
@@ -88,15 +89,25 @@ def filter_game_dataset(dataset: dict, server_id, game_name):
             return GameData(json_data=game_data)
     except ValueError:
         for game_data in dataset.values():
+            # Skip metadata (i.e. count, members)
+            if isinstance(game_data, int):
+                continue
+
             if game_data["name"] == game_name:
                 return GameData(json_data=game_data)
     return None
 
 
-def set_game_in_dataset(dataset: dict, server_id, game_data: GameData):
+def set_game_in_dataset(dataset: dict, server_id, game_data: GameData, set_game_id=True):
     server_id = str(server_id)
     if server_id not in dataset:
-        dataset[server_id] = {}
+        dataset[server_id] = {
+            "count": 0,
+            "members": 1,
+        }
+
+    if set_game_id:
+        game_data.id = dataset[server_id]["count"] + 1
 
     dataset[server_id][game_data.id] = game_data.to_json()
     return dataset
@@ -113,8 +124,12 @@ def generate_overview_embed(server_id):
 
     embed = discord.Embed(title="Games Overview")
     for game_data in game_dataset.values():
+        # Skip metadata (i.e. count, members)
+        if isinstance(game_data, int):
+            continue
+
         embed.add_field(
-            name=game_data["name"],
+            name=f"{game_data['id']} - {game_data['name']}",
             value=f"",
             inline=False
         )
@@ -152,19 +167,26 @@ async def add_game(ctx, game_name):
     except ValueError:
         pass
 
+    server_id = str(ctx.guild.id)
+
     game_dataset = read_dataset()
-    game_data = filter_game_dataset(game_dataset, ctx.guild.id, game_name)
+    game_data = filter_game_dataset(game_dataset, server_id, game_name)
     if game_data is not None:
         print(f"Game already added: {str(game_data)}")
         await ctx.send("This game has already been added.")
         return
 
     # Create a JSON for the new game, add it to the server's dataset, and save the dataset
-    game_dataset["count"] += 1
-    game_data = GameData(game_id=game_dataset["count"])
+    game_data = GameData()
     game_data.name = game_name
     game_data.submitter = str(ctx.author)
-    game_dataset = set_game_in_dataset(game_dataset, ctx.guild.id, game_data)
+    game_dataset = set_game_in_dataset(game_dataset, server_id, game_data)
+
+    # Set the correct member and game count
+    member_count = len([member for member in ctx.guild.members if not member.bot])
+    game_dataset[server_id]["members"] = member_count
+    game_dataset[server_id]["count"] += 1
+
     save_dataset(game_dataset)
 
     await update_overview(ctx)
@@ -174,7 +196,22 @@ async def add_game(ctx, game_name):
 @bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. "
                                "It is possible to use the game's ID instead of its name as well.")
 async def rate_game(ctx, game_name, score):
-    print(ctx)
+    try:
+        score = float(score)
+    except ValueError:
+        await ctx.send("Score must be a number.")
+        return
+
+    game_dataset = read_dataset()
+    game_data = filter_game_dataset(game_dataset, ctx.guild.id, game_name)
+    if game_data is None:
+        print(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    votes = game_data.votes
+    votes[str(ctx.author)] = float(score)
+
     await update_overview(ctx)
     await ctx.message.delete()
 
