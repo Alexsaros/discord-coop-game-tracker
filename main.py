@@ -325,3 +325,14 @@ loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 loop.create_task(bot.start(BOT_TOKEN))
 loop.run_forever()
+
+
+'''
+TODO:
+-command to remove games
+-link to Steam API to check prices and sales (every time it starts)
+-command to indicate whether a game is already owned or not
+-command to indicate whether a game can be played locally (with only one person having to purchase it)
+-command to indicate whether you've already played the game before
+-command to indicate how many players could play the game
+'''
