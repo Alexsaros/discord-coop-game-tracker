@@ -46,6 +46,7 @@ class GameData:
             "id": self.id,
             "name": self.name,
             "submitter": self.submitter,
+            "votes": self.votes,
         }
 
     def __str__(self):
@@ -99,7 +100,7 @@ def filter_game_dataset(game_dataset_servers: dict, server_id, game_name):
     return None
 
 
-def set_game_in_dataset(dataset: dict, server_id, game_data: GameData, set_game_id=True):
+def add_game_to_dataset(dataset: dict, server_id, game_data: GameData, set_game_id=True):
     server_id = str(server_id)
     if server_id not in dataset:
         dataset[server_id] = {
@@ -181,7 +182,7 @@ async def add_game(ctx, game_name):
     game_data = GameData()
     game_data.name = game_name
     game_data.submitter = str(ctx.author)
-    game_dataset = set_game_in_dataset(game_dataset, server_id, game_data)
+    game_dataset = add_game_to_dataset(game_dataset, server_id, game_data)
 
     # Set the correct member and game count
     member_count = len([member for member in ctx.guild.members if not member.bot])
@@ -197,21 +198,27 @@ async def add_game(ctx, game_name):
 @bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. "
                                "It is possible to use the game's ID instead of its name as well.")
 async def rate_game(ctx, game_name, score):
+    server_id = str(ctx.guild.id)
+
     try:
         score = float(score)
-    except ValueError:
-        await ctx.send("Score must be a number.")
+        assert 0 <= score <= 10
+    except (ValueError, AssertionError):
+        await ctx.send("Score must be a number between 0 and 10.")
         return
 
     game_dataset = read_dataset()
-    game_data = filter_game_dataset(game_dataset, ctx.guild.id, game_name)
+    game_data = filter_game_dataset(game_dataset, server_id, game_name)
     if game_data is None:
         print(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
         return
 
+    # Update the vote and save the new game data
     votes = game_data.votes
     votes[str(ctx.author)] = float(score)
+    game_dataset[server_id][str(game_data.id)] = game_data.to_json()
+    save_dataset(game_dataset)
 
     await update_overview(ctx)
     await ctx.message.delete()
