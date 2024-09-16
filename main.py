@@ -85,7 +85,7 @@ def filter_game_dataset(game_dataset_servers: dict, server_id, game_name):
 
     try:
         # Check if the game was passed as ID
-        game_id = int(game_name)
+        game_id = str(int(game_name))
         if game_id in dataset:
             game_data = dataset[game_id]
             return GameData(json_data=game_data)
