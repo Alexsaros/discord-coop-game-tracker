@@ -14,7 +14,6 @@ PUBLIC_KEY = os.getenv("PUBLIC_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 DATASET_FILE = "dataset.json"
-OVERVIEW_FILE = "overview.json"   # Holds the ID of the message displaying the overview for each server
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -59,7 +58,7 @@ class GameData:
 
 def read_dataset():
     if not os.path.exists(DATASET_FILE):
-        print(f"{DATASET_FILE} does not exist.")
+        print(f"{DATASET_FILE} does not exist. Creating it...")
         dataset = {}
     else:
         with open(DATASET_FILE, "r") as file:
@@ -73,64 +72,64 @@ def save_dataset(dataset: dict):
         json.dump(dataset, file, indent=4)
 
 
-def filter_game_dataset(game_dataset_servers: dict, server_id, game_name):
+def create_new_server_entry():
+    return {
+        "game_count": 0,
+        "member_count": 1,
+        "games": {},
+        "overview_message_id": 0,
+    }
+
+
+def filter_game_dataset(dataset: dict, server_id, game_name):
     """
     Checks if the given dataset contains the given game, and returns the game's data as a GameData object.
     Returns None if the game was not found.
     """
     # Narrow down the dataset to a specific server
     server_id = str(server_id)
-    if server_id not in game_dataset_servers:
-        game_dataset_servers[server_id] = {
-            "count": 0,
-            "members": 1,
-        }
-    dataset = game_dataset_servers[server_id]
+    if server_id not in dataset:
+        dataset[server_id] = create_new_server_entry()
+    game_dataset = dataset[server_id]["games"]
 
     try:
         # Check if the game was passed as ID
         game_id = str(int(game_name))
-        if game_id in dataset:
-            game_data = dataset[game_id]
-            return GameData(json_data=game_data)
+        if game_id in game_dataset:
+            game_data_dict = game_dataset[game_id]
+            return GameData(json_data=game_data_dict)
     except ValueError:
-        for game_data in dataset.values():
-            # Skip metadata (i.e. count, members)
-            if isinstance(game_data, int):
-                continue
-
-            if game_data["name"] == game_name:
-                return GameData(json_data=game_data)
+        for game_data_dict in game_dataset.values():
+            if game_data_dict["name"] == game_name:
+                return GameData(json_data=game_data_dict)
     return None
 
 
 def add_game_to_dataset(dataset: dict, server_id, game_data: GameData, set_game_id=True):
     server_id = str(server_id)
     if server_id not in dataset:
-        dataset[server_id] = {
-            "count": 0,
-            "members": 1,
-        }
+        dataset[server_id] = create_new_server_entry()
 
     if set_game_id:
-        game_data.id = dataset[server_id]["count"] + 1
+        game_data.id = dataset[server_id]["game_count"] + 1
+    # Update the game count
+    dataset[server_id]["game_count"] += 1
 
-    dataset[server_id][game_data.id] = game_data.to_json()
+    dataset[server_id]["games"][game_data.id] = game_data.to_json()
     return dataset
 
 
-def sort_games_by_score(game_dataset):
-    member_count = game_dataset["members"]
+def sort_games_by_score(server_dataset):
+    member_count = server_dataset["member_count"]
+    game_dataset = server_dataset["games"]
     game_scores = []
 
-    for game_data in game_dataset.values():
-        # Skip metadata (i.e. count, members)
-        if isinstance(game_data, int):
-            continue
+    for game_data_dict in game_dataset.values():
+        game_data = GameData(json_data=game_data_dict)
 
         # Count the score for this game
         total_score = 0
-        votes = game_data.get("votes", {})
+        votes = game_data.votes
         for voter, score in votes.items():
             total_score += score
         # Use a score of 5 for the non-voters
@@ -145,23 +144,24 @@ def sort_games_by_score(game_dataset):
 def generate_overview_embed(server_id):
     server_id = str(server_id)
 
-    game_dataset_servers = read_dataset()
+    dataset = read_dataset()
     # Try to narrow down the dataset to a specific server
-    if server_id not in game_dataset_servers:
+    if server_id not in dataset:
+        print(f"Could not find server {server_id} in the dataset.")
         return None
-    game_dataset = game_dataset_servers[server_id]
+    server_dataset = dataset[server_id]
 
-    sorted_games = sort_games_by_score(game_dataset)
+    sorted_games = sort_games_by_score(server_dataset)
 
     embed = discord.Embed(title="Games Overview", color=discord.Color.blue())
     for game_data, score in sorted_games:
         description = ""
-        tags = game_data.get("tags", [])
+        tags = game_data.tags
         if len(tags) > 0:
             description += "\n".join(tags)
 
         embed.add_field(
-            name=f"{game_data['id']} - {game_data['name']}",
+            name=f"{game_data.id} - {game_data.name}",
             value=description,
             inline=False
         )
@@ -171,18 +171,19 @@ def generate_overview_embed(server_id):
 async def update_overview(ctx):
     server_id = str(ctx.guild.id)
 
-    if not os.path.exists(OVERVIEW_FILE):
-        return
-    with open(OVERVIEW_FILE, "r") as file:
-        overview_messages = json.load(file)
+    dataset = read_dataset()
 
-    if server_id not in overview_messages:
+    if server_id not in dataset or \
+            "overview_message_id" not in dataset[server_id]:
         return
-    overview_message_id = overview_messages[server_id]
+    overview_message_id = dataset[server_id]["overview_message_id"]
+    if overview_message_id == 0:
+        return
     overview_message = await ctx.fetch_message(overview_message_id)
 
     updated_overview_embed = generate_overview_embed(server_id)
-    await overview_message.edit(embed=updated_overview_embed)
+    if updated_overview_embed is not None:
+        await overview_message.edit(embed=updated_overview_embed)
 
 
 @bot.event
@@ -201,32 +202,31 @@ async def add_game(ctx, game_name):
 
     server_id = str(ctx.guild.id)
 
-    game_dataset = read_dataset()
-    game_data = filter_game_dataset(game_dataset, server_id, game_name)
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is not None:
         print(f"Game already added: {str(game_data)}")
         await ctx.send("This game has already been added.")
         return
 
-    # Create a JSON for the new game, add it to the server's dataset, and save the dataset
+    # Create an object for the new game, add it to the server's dataset, and save the dataset
     game_data = GameData()
     game_data.name = game_name
     game_data.submitter = str(ctx.author)
-    game_dataset = add_game_to_dataset(game_dataset, server_id, game_data)
+    dataset = add_game_to_dataset(dataset, server_id, game_data)
 
-    # Set the correct member and game count
+    # Set the correct member count
     member_count = len([member for member in ctx.guild.members if not member.bot])
-    game_dataset[server_id]["members"] = member_count
-    game_dataset[server_id]["count"] += 1
+    dataset[server_id]["member_count"] = member_count
 
-    save_dataset(game_dataset)
+    save_dataset(dataset)
 
     await update_overview(ctx)
     await ctx.message.delete()
 
 
-@bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. "
-                               "It is possible to use the game's ID instead of its name as well. "
+@bot.command(name="vote", help="Sets your preference for playing a game, between 0-10 (including decimals). Example: !vote \"game name\" 7.5. "
+                               "It is possible to use the game's ID instead of its name. "
                                "If you haven't voted for a game, your vote will default to 5.")
 async def rate_game(ctx, game_name, score):
     server_id = str(ctx.guild.id)
@@ -238,8 +238,8 @@ async def rate_game(ctx, game_name, score):
         await ctx.send("Score must be a number between 0 and 10.")
         return
 
-    game_dataset = read_dataset()
-    game_data = filter_game_dataset(game_dataset, server_id, game_name)
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
         print(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
@@ -247,15 +247,15 @@ async def rate_game(ctx, game_name, score):
 
     # Update the vote and save the new game data
     votes = game_data.votes
-    votes[str(ctx.author)] = float(score)
-    game_dataset[server_id][str(game_data.id)] = game_data.to_json()
-    save_dataset(game_dataset)
+    votes[str(ctx.author)] = score
+    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+    save_dataset(dataset)
 
     await update_overview(ctx)
     await ctx.message.delete()
 
 
-@bot.command(name="overview", help="Displays on overview of the most interesting games. Example: !display. "
+@bot.command(name="overview", help="Displays an overview of the most interesting games. Example: !display. "
                                    "Will update the last occurrence of this message when the data gets updated.")
 async def overview(ctx):
     overview_embed = generate_overview_embed(ctx.guild.id)
@@ -265,18 +265,11 @@ async def overview(ctx):
 
     message = await ctx.send(embed=overview_embed)
 
-    # Retrieve the mapping of server IDs to their overview message IDs
-    if not os.path.exists(OVERVIEW_FILE):
-        print(f"{OVERVIEW_FILE} does not exist.")
-        overview_data = {}
-    else:
-        with open(OVERVIEW_FILE, "r") as file:
-            overview_data = json.load(file)   # type: dict[str, int]
+    dataset = read_dataset()
 
     # Store the new message ID
-    overview_data[str(ctx.guild.id)] = message.id
-    with open(OVERVIEW_FILE, "w") as file:
-        json.dump(overview_data, file, indent=4)
+    dataset[str(ctx.guild.id)]["overview_message_id"] = message.id
+    save_dataset(dataset)
 
     await update_overview(ctx)
     await ctx.message.delete()
@@ -286,8 +279,8 @@ async def overview(ctx):
 async def tag(ctx, game_name, tag_text):
     server_id = str(ctx.guild.id)
 
-    game_dataset = read_dataset()
-    game_data = filter_game_dataset(game_dataset, server_id, game_name)
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
         print(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
@@ -295,8 +288,8 @@ async def tag(ctx, game_name, tag_text):
 
     # Update the tags and save the new game data
     game_data.tags.append(tag_text)
-    game_dataset[server_id][str(game_data.id)] = game_data.to_json()
-    save_dataset(game_dataset)
+    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+    save_dataset(dataset)
 
     await update_overview(ctx)
     await ctx.message.delete()
