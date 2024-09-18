@@ -244,6 +244,26 @@ async def add_game(ctx, game_name):
     await ctx.message.delete()
 
 
+@bot.command(name="remove", help="Removes a game from the list. Example: !remove \"game name\". "
+                                 "It is possible to use the game's ID instead of its name.")
+async def remove_game(ctx, game_name):
+    server_id = str(ctx.guild.id)
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        print(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game.")
+        return
+
+    # Remove the game and save the dataset again without the game
+    del dataset[server_id]["games"][str(game_data.id)]
+    save_dataset(dataset)
+
+    await update_overview(ctx)
+    await ctx.message.delete()
+
+
 @bot.command(name="vote", help="Sets your preference for playing a game, between 0-10 (including decimals). Example: !vote \"game name\" 7.5. "
                                "It is possible to use the game's ID instead of its name. "
                                "If you haven't voted for a game, your vote will default to 5.")
@@ -401,7 +421,6 @@ loop.run_forever()
 
 '''
 TODO:
--command to remove games
 -link to Steam API to check prices and sales (every time it starts)
 -command to indicate whether a game can be played locally (with only one person having to purchase it)
 -command to indicate whether you've already played the game before
