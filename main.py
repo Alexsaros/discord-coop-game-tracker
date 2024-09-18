@@ -15,6 +15,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 DATASET_FILE = "dataset.json"
 
+EMOJIS = {
+    "owned": ":video_game:",
+    "not_owned": ":money_with_wings:",
+}
+
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -33,6 +38,7 @@ class GameData:
     def __init__(self, json_data=None):
         self.votes = {}
         self.tags = []
+        self.owned = {}
         if json_data:
             self.load_json(json_data)
 
@@ -42,6 +48,7 @@ class GameData:
         self.submitter = json_data["submitter"]
         self.votes = json_data.get("votes", {})
         self.tags = json_data.get("tags", [])
+        self.owned = json_data.get("owned", {})
 
     def to_json(self):
         return {
@@ -50,6 +57,7 @@ class GameData:
             "submitter": self.submitter,
             "votes": self.votes,
             "tags": self.tags,
+            "owned": self.owned,
         }
 
     def __str__(self):
@@ -156,9 +164,20 @@ def generate_overview_embed(server_id):
     embed = discord.Embed(title="Games Overview", color=discord.Color.blue())
     for game_data, score in sorted_games:
         description = ""
+
+        if game_data.owned:
+            description += "\nOwned: "
+            for user, owned in game_data.owned.items():
+                if owned:
+                    description += EMOJIS["owned"]
+                else:
+                    description += EMOJIS["not_owned"]
+
         tags = game_data.tags
         if len(tags) > 0:
-            description += "\n".join(tags)
+            description += "\n" + "\n".join(tags)
+
+        description = description.strip()
 
         embed.add_field(
             name=f"{game_data.id} - {game_data.name}",
@@ -246,8 +265,7 @@ async def rate_game(ctx, game_name, score):
         return
 
     # Update the vote and save the new game data
-    votes = game_data.votes
-    votes[str(ctx.author)] = score
+    game_data.votes[str(ctx.author)] = score
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
@@ -288,6 +306,35 @@ async def tag(ctx, game_name, tag_text):
 
     # Update the tags and save the new game data
     game_data.tags.append(tag_text)
+    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+    save_dataset(dataset)
+
+    await update_overview(ctx)
+    await ctx.message.delete()
+
+
+@bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. "
+                              "Anything starting with \"y\" means you own the game, and the opposite for anything starting with \"n\".")
+async def own(ctx, game_name, owned_text):
+    server_id = str(ctx.guild.id)
+
+    if owned_text[:1] == "y":
+        owned = True
+    elif owned_text[:1] == "n":
+        owned = False
+    else:
+        await ctx.send("Received invalid argument.")
+        return
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        print(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    # Update the "owned" field and save the new game data
+    game_data.owned[str(ctx.author)] = owned
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
@@ -356,7 +403,6 @@ loop.run_forever()
 TODO:
 -command to remove games
 -link to Steam API to check prices and sales (every time it starts)
--command to indicate whether a game is already owned or not
 -command to indicate whether a game can be played locally (with only one person having to purchase it)
 -command to indicate whether you've already played the game before
 -command to indicate how many players could play the game
