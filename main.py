@@ -166,7 +166,7 @@ def generate_overview_embed(server_id):
         description = ""
 
         if game_data.owned:
-            description += "\nOwned: "
+            description += "\n> Owned: "
             for user, owned in game_data.owned.items():
                 if owned:
                     description += EMOJIS["owned"]
@@ -175,7 +175,7 @@ def generate_overview_embed(server_id):
 
         tags = game_data.tags
         if len(tags) > 0:
-            description += "\n" + "\n".join(tags)
+            description += "\n> " + "\n> ".join(tags)
 
         description = description.strip()
 
