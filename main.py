@@ -18,6 +18,10 @@ DATASET_FILE = "dataset.json"
 EMOJIS = {
     "owned": ":video_game:",
     "not_owned": ":money_with_wings:",
+    "1players": ":person_standing:",
+    "2players": ":people_holding_hands:",
+    "3players": ":family_man_girl_boy:",
+    "4players": ":family_mmgb:",
 }
 
 intents = discord.Intents.default()
@@ -34,6 +38,7 @@ class GameData:
     submitter = ""
     votes = None
     tags = None
+    player_count = 0
 
     def __init__(self, json_data=None):
         self.votes = {}
@@ -49,6 +54,7 @@ class GameData:
         self.votes = json_data.get("votes", {})
         self.tags = json_data.get("tags", [])
         self.owned = json_data.get("owned", {})
+        self.player_count = json_data.get("player_count", 0)
 
     def to_json(self):
         return {
@@ -58,6 +64,7 @@ class GameData:
             "votes": self.votes,
             "tags": self.tags,
             "owned": self.owned,
+            "player_count": self.player_count,
         }
 
     def __str__(self):
@@ -164,6 +171,10 @@ def generate_overview_embed(server_id):
     embed = discord.Embed(title="Games Overview", color=discord.Color.blue())
     for game_data, score in sorted_games:
         description = ""
+
+        if game_data.player_count > 0:
+            players_emoji = EMOJIS[f"{game_data.player_count}players"]
+            description += f"\n> Players: {players_emoji}"
 
         if game_data.owned:
             description += "\n> Owned: "
@@ -362,6 +373,33 @@ async def own(ctx, game_name, owned_text):
     await ctx.message.delete()
 
 
+@bot.command(name="players", help="Sets with how many players a game can be played, ranging from 1-4. Example: !players \"game name\" 4.")
+async def players(ctx, game_name, player_count):
+    server_id = str(ctx.guild.id)
+
+    try:
+        player_count = int(player_count)
+        assert 1 <= player_count <= 4
+    except (ValueError, AssertionError):
+        await ctx.send("Player count must be a number between 1 and 4.")
+        return
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        print(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    # Update the "player_count" field and save the new game data
+    game_data.player_count = player_count
+    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+    save_dataset(dataset)
+
+    await update_overview(ctx)
+    await ctx.message.delete()
+
+
 @bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
 async def kick(ctx, member_name):
     member_name = member_name.lower()
@@ -424,7 +462,6 @@ TODO:
 -link to Steam API to check prices and sales (every time it starts)
 -command to indicate whether a game can be played locally (with only one person having to purchase it)
 -command to indicate whether you've already played the game before
--command to indicate how many players could play the game
 -add an "edit" command that shows a temporary message with emojis as functioning as shortcut buttons for commands, when pressing the X emoji, delete the message
 -allow users to set an alias (e.g. an emoji) and show the aliases of the people who voted on a game
 '''
