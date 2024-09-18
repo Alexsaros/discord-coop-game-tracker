@@ -367,4 +367,6 @@ TODO:
 -command to indicate whether a game can be played locally (with only one person having to purchase it)
 -command to indicate whether you've already played the game before
 -command to indicate how many players could play the game
+-add an "edit" command that shows a temporary message with emojis as functioning as shortcut buttons for commands, when pressing the X emoji, delete the message
+-allow users to set an alias (e.g. an emoji) and show the aliases of the people who voted on a game
 '''
