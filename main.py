@@ -191,11 +191,10 @@ def generate_overview_embed(server_id):
 
         if game_data.owned:
             description += "\n> Owned: "
-            for user, owned in game_data.owned.items():
-                if owned:
-                    description += EMOJIS["owned"]
-                else:
-                    description += EMOJIS["not_owned"]
+            # Sums the True/False values, with them corresponding to 1/0
+            owned_count = sum(owned for owned in game_data.owned.values())
+            description += EMOJIS["owned"] * owned_count
+            description += EMOJIS["not_owned"] * (len(game_data.owned) - owned_count)
 
         tags = game_data.tags
         if len(tags) > 0:
