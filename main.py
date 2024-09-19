@@ -6,12 +6,14 @@ import json
 import time
 from discord.ext import commands
 from dotenv import load_dotenv
+from steam_web_api import Steam
 
 
 load_dotenv()
 APP_ID = os.getenv("APP_ID")
 PUBLIC_KEY = os.getenv("PUBLIC_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 
 DATASET_FILE = "dataset.json"
 
@@ -30,6 +32,8 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+steam = Steam(STEAM_API_KEY)
+
 
 class GameData:
 
@@ -39,6 +43,8 @@ class GameData:
     votes = None
     tags = None
     player_count = 0
+    link = ""
+    steam_id = 0
 
     def __init__(self, json_data=None):
         self.votes = {}
@@ -55,6 +61,8 @@ class GameData:
         self.tags = json_data.get("tags", [])
         self.owned = json_data.get("owned", {})
         self.player_count = json_data.get("player_count", 0)
+        self.link = json_data.get("link", "")
+        self.steam_id = json_data.get("steam_id", 0)
 
     def to_json(self):
         return {
@@ -65,6 +73,8 @@ class GameData:
             "tags": self.tags,
             "owned": self.owned,
             "player_count": self.player_count,
+            "link": self.link,
+            "steam_id": self.steam_id,
         }
 
     def __str__(self):
@@ -216,6 +226,26 @@ async def update_overview(ctx):
         await overview_message.edit(embed=updated_overview_embed)
 
 
+def search_steam_for_game(game_name):
+    """
+    Uses the Steam API to search for the given game, and returns the first result.
+    Returns None if no results were found.
+    Example return value:
+    {
+      "id": 105600,
+      "link": "https://store.steampowered.com/app/105600/Terraria/?snr=1_7_15__13",
+      "name": "Terraria",
+      "img": "https://cdn.akamai.steamstatic.com/steam/apps/105600/capsule_sm_120.jpg?t=1590092560",
+      "price": "$9.99"
+    },
+    """
+    game_results = steam.apps.search_games(game_name)["apps"]
+    if len(game_results) == 0:
+        return None
+
+    return game_results[0]
+
+
 @bot.event
 async def on_ready():
     print(f"{bot.user} has connected to Discord!")
@@ -239,8 +269,16 @@ async def add_game(ctx, game_name):
         await ctx.send("This game has already been added.")
         return
 
-    # Create an object for the new game, add it to the server's dataset, and save the dataset
+    # Create an object for the new game,
     game_data = GameData()
+
+    # Search Steam for this game and save the info
+    steam_game_info = search_steam_for_game(game_name)
+    if steam_game_info is not None:
+        game_data.steam_id = steam_game_info["id"]
+        game_data.link = steam_game_info["link"]
+
+    # Add miscellaneous info, add the game to the server's dataset, and save the dataset
     game_data.name = game_name
     game_data.submitter = str(ctx.author)
     dataset = add_game_to_dataset(dataset, server_id, game_data)
