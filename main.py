@@ -182,6 +182,9 @@ def generate_overview_embed(server_id):
     for game_data, score in sorted_games:
         description = ""
 
+        if game_data.link:
+            description += f"\n> Link: [here]({game_data.link})"
+
         if game_data.player_count > 0:
             players_emoji = EMOJIS[f"{game_data.player_count}players"]
             description += f"\n> Players: {players_emoji}"
