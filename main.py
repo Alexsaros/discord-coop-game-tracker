@@ -4,9 +4,9 @@ import discord
 import asyncio
 import json
 import time
+import requests
 from discord.ext import commands
 from dotenv import load_dotenv
-from steam_web_api import Steam
 
 
 load_dotenv()
@@ -32,8 +32,6 @@ intents.members = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-steam = Steam(STEAM_API_KEY)
-
 
 class GameData:
 
@@ -43,7 +41,6 @@ class GameData:
     votes = None
     tags = None
     player_count = 0
-    link = ""
     steam_id = 0
 
     def __init__(self, json_data=None):
@@ -61,7 +58,6 @@ class GameData:
         self.tags = json_data.get("tags", [])
         self.owned = json_data.get("owned", {})
         self.player_count = json_data.get("player_count", 0)
-        self.link = json_data.get("link", "")
         self.steam_id = json_data.get("steam_id", 0)
 
     def to_json(self):
@@ -73,7 +69,6 @@ class GameData:
             "tags": self.tags,
             "owned": self.owned,
             "player_count": self.player_count,
-            "link": self.link,
             "steam_id": self.steam_id,
         }
 
@@ -182,8 +177,9 @@ def generate_overview_embed(server_id):
     for game_data, score in sorted_games:
         description = ""
 
-        if game_data.link:
-            description += f"\n> Link: [here]({game_data.link})"
+        if game_data.steam_id:
+            link = f"https://store.steampowered.com/app/{game_data.steam_id}"
+            description += f"\n> Link: [here]({link})"
 
         if game_data.player_count > 0:
             players_emoji = EMOJIS[f"{game_data.player_count}players"]
@@ -228,24 +224,42 @@ async def update_overview(ctx):
         await overview_message.edit(embed=updated_overview_embed)
 
 
-def search_steam_for_game(game_name):
+def search_steam_for_game_id(game_name):
     """
-    Uses the Steam API to search for the given game, and returns the first result.
+    Uses the Steam API to search for the given game, and returns its Steam ID.
     Returns None if no results were found.
-    Example return value:
-    {
-      "id": 105600,
-      "link": "https://store.steampowered.com/app/105600/Terraria/?snr=1_7_15__13",
-      "name": "Terraria",
-      "img": "https://cdn.akamai.steamstatic.com/steam/apps/105600/capsule_sm_120.jpg?t=1590092560",
-      "price": "$9.99"
-    },
     """
-    game_results = steam.apps.search_games(game_name)["apps"]
+    game_name = game_name.lower()
+
+    # API URL for searching Steam games
+    url = "https://store.steampowered.com/api/storesearch/"
+
+    params = {
+        "term": game_name,
+        "cc": "nl",     # Country used for pricing/currency
+        "l": "english",
+    }
+    response = requests.get(url, params=params)
+
+    if response.status_code >= 300:
+        print(f"Failed to search for \"{game_name}\" using Steam API: {response.status_code}")
+        print(response.json())
+        return None
+
+    response_json = response.json()
+    game_results = response_json["items"]
     if len(game_results) == 0:
         return None
 
-    return game_results[0]
+    # Check if we find any exact matches. If not, use the first result
+    for game in game_results:
+        if game["name"].lower() == game_name:
+            game_match = game
+            break
+    else:
+        game_match = game_results[0]
+
+    return game_match["id"]
 
 
 @bot.event
@@ -275,10 +289,9 @@ async def add_game(ctx, game_name):
     game_data = GameData()
 
     # Search Steam for this game and save the info
-    steam_game_info = search_steam_for_game(game_name)
-    if steam_game_info is not None:
-        game_data.steam_id = steam_game_info["id"]
-        game_data.link = steam_game_info["link"]
+    steam_game_id = search_steam_for_game_id(game_name)
+    if steam_game_id is not None:
+        game_data.steam_id = steam_game_id
 
     # Add miscellaneous info, add the game to the server's dataset, and save the dataset
     game_data.name = game_name

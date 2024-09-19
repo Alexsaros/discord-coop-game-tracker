@@ -6,7 +6,6 @@ name = "pypi"
 [packages]
 discord = "*"
 python-dotenv = "*"
-python-steam-api = "*"
 
 [requires]
 python_version = "3.11"
