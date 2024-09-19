@@ -386,12 +386,12 @@ async def tag(ctx, game_name, tag_text):
 
 @bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. "
                               "Anything starting with \"y\" means you own the game, and the opposite for anything starting with \"n\".")
-async def own(ctx, game_name, owned_text):
+async def own(ctx, game_name, owns_game):
     server_id = str(ctx.guild.id)
 
-    if owned_text[:1] == "y":
+    if owns_game[:1] == "y":
         owned = True
-    elif owned_text[:1] == "n":
+    elif owns_game[:1] == "n":
         owned = False
     else:
         await ctx.send("Received invalid argument.")
@@ -469,6 +469,7 @@ async def on_command_error(ctx, error):
     print(ctx)
     print(error)
     print(type(error))
+    await ctx.send(error)
     timestamp = time.time()
     with open("err.log", "a") as f:
         f.write(f"{timestamp}\n{ctx}\n{error}\n{traceback.format_exception(error)}\n\n")
