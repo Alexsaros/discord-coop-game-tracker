@@ -42,6 +42,8 @@ class GameData:
     tags = None
     player_count = 0
     steam_id = 0
+    price_current = -1
+    price_original = -1
 
     def __init__(self, json_data=None):
         self.votes = {}
@@ -59,6 +61,8 @@ class GameData:
         self.owned = json_data.get("owned", {})
         self.player_count = json_data.get("player_count", 0)
         self.steam_id = json_data.get("steam_id", 0)
+        self.price_current = json_data.get("price_current", -1)
+        self.price_original = json_data.get("price_original", -1)
 
     def to_json(self):
         return {
@@ -70,6 +74,8 @@ class GameData:
             "owned": self.owned,
             "player_count": self.player_count,
             "steam_id": self.steam_id,
+            "price_current": self.price_current,
+            "price_original": self.price_original,
         }
 
     def __str__(self):
@@ -177,9 +183,29 @@ def generate_overview_embed(server_id):
     for game_data, score in sorted_games:
         description = ""
 
-        if game_data.steam_id:
-            link = f"https://store.steampowered.com/app/{game_data.steam_id}"
-            description += f"\n> Link: [here]({link})"
+        if game_data.price_original >= 0:
+            price_original = game_data.price_original
+            price_current = game_data.price_current
+
+            if price_original == 0:
+                price_text = "Free"
+            else:
+                price_text = f"€{price_original:.2f}"
+                # Check if the game has a discount
+                if price_current != price_original:
+                    if price_current == 0:
+                        # The game is currently free
+                        price_text = f"~~{price_text}~~ **Currently free**"
+                    else:
+                        discount_percent = int(((price_original - price_current) / price_original) * 100)
+                        price_text = f"~~{price_text}~~ **€{price_current:.2f}** (-{discount_percent}%)"
+
+            # If we have the game ID, add a hyperlink on the game's price
+            if game_data.steam_id:
+                link = f"https://store.steampowered.com/app/{game_data.steam_id}"
+                price_text = f"[{price_text}]({link})"
+
+            description += f"\n> Price: {price_text}"
 
         if game_data.player_count > 0:
             players_emoji = EMOJIS[f"{game_data.player_count}players"]
@@ -224,9 +250,10 @@ async def update_overview(ctx):
         await overview_message.edit(embed=updated_overview_embed)
 
 
-def search_steam_for_game_id(game_name):
+def search_steam_for_game(game_name):
     """
-    Uses the Steam API to search for the given game, and returns its Steam ID.
+    Uses the Steam API to search for the given game, and returns a dictionary containing the "id", "price_current" and
+    "price_original" keys.
     Returns None if no results were found.
     """
     game_name = game_name.lower()
@@ -259,7 +286,28 @@ def search_steam_for_game_id(game_name):
     else:
         game_match = game_results[0]
 
-    return game_match["id"]
+    price_current = -1
+    price_original = -1
+    if "price" not in game_match:
+        # The game is free
+        price_current = 0
+        price_original = 0
+    else:
+        price_currency = game_match["price"]["currency"]
+        if price_currency != "EUR":
+            game_name = game_match["name"]
+            print(f"Error: received currency {price_currency} for game {game_name}.")
+        else:
+            price_current = game_match["price"]["final"] / 100
+            price_original = game_match["price"]["initial"] / 100
+
+    steam_info = {
+        "id": game_match["id"],
+        "price_current": price_current,
+        "price_original": price_original,
+    }
+
+    return steam_info
 
 
 @bot.event
@@ -289,9 +337,11 @@ async def add_game(ctx, game_name):
     game_data = GameData()
 
     # Search Steam for this game and save the info
-    steam_game_id = search_steam_for_game_id(game_name)
-    if steam_game_id is not None:
-        game_data.steam_id = steam_game_id
+    steam_game_info = search_steam_for_game(game_name)
+    if steam_game_info is not None:
+        game_data.steam_id = steam_game_info["id"]
+        game_data.price_current = steam_game_info["price_current"]
+        game_data.price_original = steam_game_info["price_original"]
 
     # Add miscellaneous info, add the game to the server's dataset, and save the dataset
     game_data.name = game_name
