@@ -26,6 +26,8 @@ EMOJIS = {
     "4players": ":family_mmgb:",
     "free": ":free:",
     "local": ":satellite:",
+    "experienced": ":brain:",
+    "new": ":new:",
 }
 
 intents = discord.Intents.default()
@@ -47,6 +49,7 @@ class GameData:
     price_current = -1
     price_original = -1
     local = False
+    played_before = False
 
     def __init__(self, json_data=None):
         self.votes = {}
@@ -67,6 +70,7 @@ class GameData:
         self.price_current = json_data.get("price_current", -1)
         self.price_original = json_data.get("price_original", -1)
         self.local = json_data.get("local", False)
+        self.played_before = json_data.get("played_before", {})
 
     def to_json(self):
         return {
@@ -81,6 +85,7 @@ class GameData:
             "price_current": self.price_current,
             "price_original": self.price_original,
             "local": self.local,
+            "played_before": self.played_before,
         }
 
     def __str__(self):
@@ -230,6 +235,13 @@ def generate_overview_embed(server_id):
 
             if game_data.local:
                 description += "(" + EMOJIS["local"] + ")"
+
+        if game_data.played_before:
+            description += "\n> Experience: "
+            # Sums the True/False values, with them corresponding to 1/0
+            played_before_count = sum(played for played in game_data.played_before.values())
+            description += EMOJIS["experienced"] * played_before_count
+            description += EMOJIS["new"] * (len(game_data.played_before) - played_before_count)
 
         tags = game_data.tags
         if len(tags) > 0:
@@ -651,6 +663,37 @@ async def set_local(ctx, game_name, is_local="yes"):
 
     # Update the "local" field and save the new game data
     game_data.local = local
+    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+    save_dataset(dataset)
+
+    await update_overview(ctx)
+    await ctx.message.delete()
+
+
+@bot.command(name="played", help="Sets whether you have played a game before or not. Example: !played \"game name\" no. "
+                                 "Anything starting with \"y\" means you've experienced at least a decent part of the game before. "
+                                 "Anything starting with \"n\" means you're unfamiliar with the game. "
+                                 "Not entering anything defaults to \"yes\".")
+async def set_local(ctx, game_name, played_before="yes"):
+    server_id = str(ctx.guild.id)
+
+    if played_before[:1] == "y":
+        experienced = True
+    elif played_before[:1] == "n":
+        experienced = False
+    else:
+        await ctx.send("Received invalid argument.")
+        return
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        print(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    # Update the "played_before" field and save the new game data
+    game_data.played_before[str(ctx.author)] = experienced
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
