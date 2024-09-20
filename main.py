@@ -704,6 +704,35 @@ async def set_local(ctx, game_name, played_before="yes"):
     await ctx.message.delete()
 
 
+@bot.command(name="steam_id", help="Links a game to a steam ID for the purpose of retrieving prices. Example: !steam_id \"game name\" 105600.")
+async def set_steam_id(ctx, game_name, steam_id):
+    server_id = str(ctx.guild.id)
+
+    try:
+        steam_id = int(steam_id)
+    except ValueError:
+        await ctx.send("Steam ID must be a number.")
+        return
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        print(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    # Update the "steam_id" field, retrieve the price again, and save the new game data
+    game_data.steam_id = steam_id
+    steam_game_info = get_game_price(steam_id)
+    game_data.price_current = steam_game_info["price_current"]
+    game_data.price_original = steam_game_info["price_original"]
+    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+    save_dataset(dataset)
+
+    await update_overview(ctx)
+    await ctx.message.delete()
+
+
 @bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
 async def kick(ctx, member_name):
     member_name = member_name.lower()
@@ -761,8 +790,6 @@ loop.run_forever()
 
 '''
 TODO:
--command to indicate whether you've already played the game before
--command to set the Steam game ID
 -add an "edit" command that shows a temporary message with emojis as functioning as shortcut buttons for commands, when pressing the X emoji, delete the message
 -allow users to set an alias (e.g. an emoji) and show the aliases of the people who voted on a game
 '''
