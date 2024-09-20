@@ -24,6 +24,7 @@ EMOJIS = {
     "2players": ":people_holding_hands:",
     "3players": ":family_man_girl_boy:",
     "4players": ":family_mmgb:",
+    "free": ":free:",
 }
 
 intents = discord.Intents.default()
@@ -189,7 +190,7 @@ def generate_overview_embed(server_id):
             price_current = game_data.price_current
 
             if price_original == 0:
-                price_text = "Free"
+                price_text = EMOJIS["free"]
             else:
                 price_text = f"€{price_original:.2f}"
                 # Check if the game has a discount
