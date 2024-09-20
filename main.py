@@ -213,11 +213,13 @@ def generate_overview_embed(server_id):
             description += f"\n> Players: {players_emoji}"
 
         if game_data.owned:
-            description += "\n> Owned: "
-            # Sums the True/False values, with them corresponding to 1/0
-            owned_count = sum(owned for owned in game_data.owned.values())
-            description += EMOJIS["owned"] * owned_count
-            description += EMOJIS["not_owned"] * (len(game_data.owned) - owned_count)
+            # Do not display who owns a game if the game is free, to keep the overview concise
+            if game_data.price_original > 0:
+                description += "\n> Owned: "
+                # Sums the True/False values, with them corresponding to 1/0
+                owned_count = sum(owned for owned in game_data.owned.values())
+                description += EMOJIS["owned"] * owned_count
+                description += EMOJIS["not_owned"] * (len(game_data.owned) - owned_count)
 
         tags = game_data.tags
         if len(tags) > 0:
@@ -560,7 +562,8 @@ async def tag(ctx, game_name, tag_text):
 
 @bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. "
                               "Anything starting with \"y\" means you own the game, and the opposite for anything starting with \"n\". "
-                              "Not entering anything defaults to \"yes\".")
+                              "Not entering anything defaults to \"yes\". "
+                              "How many people own a game will not be shown if the game is free.")
 async def own(ctx, game_name, owns_game="yes"):
     server_id = str(ctx.guild.id)
 
