@@ -251,12 +251,45 @@ async def update_overview(ctx):
         await overview_message.edit(embed=updated_overview_embed)
 
 
+async def update_all_overviews():
+    dataset = read_dataset()
+    for server_id, server_dataset in dataset.items():
+        server_object = bot.get_guild(int(server_id))
+        if server_object is None:
+            print(f"Could not find server with ID {server_id}.")
+            continue
+
+        overview_channel_id = server_dataset.get("overview_channel_id")
+        if overview_channel_id in (None, 0):
+            # This server does not have an overview message
+            continue
+
+        channel_object = server_object.get_channel(overview_channel_id)
+        if channel_object is None:
+            print(f"Could not find channel with ID {overview_channel_id}.")
+            continue
+
+        overview_message_id = server_dataset.get("overview_message_id")
+        if overview_message_id in (None, 0):
+            print(f"Error: overview_message_id not found, but overview_channel_id is present for server {server_id}.")
+            continue
+
+        overview_message = await channel_object.fetch_message(overview_message_id)
+
+        updated_overview_embed = generate_overview_embed(server_id)
+        if updated_overview_embed is not None:
+            await overview_message.edit(embed=updated_overview_embed)
+
+
 def get_game_price(game_id):
     """
     Uses the Steam API to search for info on the given game ID.
     Returns a dictionary containing the "id", "price_current" and "price_original" keys.
     Returns None if the game wasn't found.
     """
+    # Check if an actual game ID was given
+    if game_id == 0:
+        return None
     game_id = str(game_id)
 
     # API URL for getting info on a specific Steam game
@@ -307,6 +340,22 @@ def get_game_price(game_id):
     }
 
     return steam_info
+
+
+async def update_dataset_steam_prices():
+    dataset = read_dataset()
+    for server_dataset in dataset.values():
+        game_dataset = server_dataset.get("games", {})
+        for game_dict in game_dataset.values():
+            steam_id = game_dict.get("steam_id", 0)
+            steam_game_info = get_game_price(steam_id)
+            if steam_game_info is not None:
+                game_dict["price_current"] = steam_game_info["price_current"]
+                game_dict["price_original"] = steam_game_info["price_original"]
+
+    save_dataset(dataset)
+
+    await update_all_overviews()
 
 
 def search_steam_for_game(game_name):
@@ -373,6 +422,8 @@ def search_steam_for_game(game_name):
 @bot.event
 async def on_ready():
     print(f"{bot.user} has connected to Discord!")
+    await update_dataset_steam_prices()
+    print("Finished updating Steam prices")
 
 
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
@@ -620,7 +671,6 @@ loop.run_forever()
 
 '''
 TODO:
--link to Steam API to check prices and sales (every time it starts)
 -command to indicate whether a game can be played locally (with only one person having to purchase it)
 -command to indicate whether you've already played the game before
 -add an "edit" command that shows a temporary message with emojis as functioning as shortcut buttons for commands, when pressing the X emoji, delete the message
