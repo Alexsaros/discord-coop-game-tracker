@@ -250,10 +250,68 @@ async def update_overview(ctx):
         await overview_message.edit(embed=updated_overview_embed)
 
 
+def get_game_price(game_id):
+    """
+    Uses the Steam API to search for info on the given game ID.
+    Returns a dictionary containing the "id", "price_current" and "price_original" keys.
+    Returns None if the game wasn't found.
+    """
+    game_id = str(game_id)
+
+    # API URL for getting info on a specific Steam game
+    url = f"https://store.steampowered.com/api/appdetails?appids={game_id}&cc=eu"
+
+    params = {
+        "appids": game_id,
+        "cc": "nl",     # Country used for pricing/currency
+        "l": "english",
+    }
+    response = requests.get(url, params=params)
+
+    if response.status_code >= 300:
+        print(f"Failed to get game with ID \"{game_id}\" using Steam API: {response.status_code}")
+        print(response.json())
+        return None
+
+    response_json = response.json()
+    steam_game_data = response_json.get(game_id, {}).get("data", {})
+    if not steam_game_data:
+        print(f"Warning: missing Steam info for game ID {game_id}.")
+        return None
+
+    game_name = steam_game_data["name"]
+
+    price_current = -1
+    price_original = -1
+    price_overview = steam_game_data.get("price_overview", {})
+    if not price_overview:
+        # Sanity check to see if the game is really free
+        if not "is_free":
+            print(f"Warning: is_free is False, but missing price_overview for game {game_name}.")
+        else:
+            price_current = 0
+            price_original = 0
+    else:
+        price_currency = price_overview["currency"]
+        if price_currency != "EUR":
+            print(f"Error: received currency {price_currency} for game {game_name}.")
+        else:
+            price_current = price_overview["final"] / 100
+            price_original = price_overview["initial"] / 100
+
+    steam_info = {
+        "id": steam_game_data["steam_appid"],
+        "price_current": price_current,
+        "price_original": price_original,
+    }
+
+    return steam_info
+
+
 def search_steam_for_game(game_name):
     """
-    Uses the Steam API to search for the given game, and returns a dictionary containing the "id", "price_current" and
-    "price_original" keys.
+    Uses the Steam API to search for the given game.
+    Returns a dictionary containing the "id", "price_current" and "price_original" keys.
     Returns None if no results were found.
     """
     game_name = game_name.lower()
@@ -288,18 +346,19 @@ def search_steam_for_game(game_name):
 
     price_current = -1
     price_original = -1
-    if "price" not in game_match:
+    price_overview = game_match.get("price", {})
+    if not price_overview:
         # The game is free
         price_current = 0
         price_original = 0
     else:
-        price_currency = game_match["price"]["currency"]
+        price_currency = price_overview["currency"]
         if price_currency != "EUR":
             game_name = game_match["name"]
             print(f"Error: received currency {price_currency} for game {game_name}.")
         else:
-            price_current = game_match["price"]["final"] / 100
-            price_original = game_match["price"]["initial"] / 100
+            price_current = price_overview["final"] / 100
+            price_original = price_overview["initial"] / 100
 
     steam_info = {
         "id": game_match["id"],
