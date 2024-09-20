@@ -618,7 +618,7 @@ async def players(ctx, game_name, player_count):
 async def kick(ctx, member_name):
     member_name = member_name.lower()
     if member_name in ["co-op game tracker", "coop game tracker"]:
-        await ctx.send("I won't kick myself, fool.")
+        await ctx.send("Ouch! Stop kicking me! :cry:")
         return
 
     if member_name in ["alexsaro"]:
