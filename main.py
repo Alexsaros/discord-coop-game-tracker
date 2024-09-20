@@ -559,8 +559,9 @@ async def tag(ctx, game_name, tag_text):
 
 
 @bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. "
-                              "Anything starting with \"y\" means you own the game, and the opposite for anything starting with \"n\".")
-async def own(ctx, game_name, owns_game):
+                              "Anything starting with \"y\" means you own the game, and the opposite for anything starting with \"n\". "
+                              "Not entering anything defaults to \"yes\".")
+async def own(ctx, game_name, owns_game="yes"):
     server_id = str(ctx.guild.id)
 
     if owns_game[:1] == "y":
