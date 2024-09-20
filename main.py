@@ -25,6 +25,7 @@ EMOJIS = {
     "3players": ":family_man_girl_boy:",
     "4players": ":family_mmgb:",
     "free": ":free:",
+    "local": ":satellite:",
 }
 
 intents = discord.Intents.default()
@@ -45,6 +46,7 @@ class GameData:
     steam_id = 0
     price_current = -1
     price_original = -1
+    local = False
 
     def __init__(self, json_data=None):
         self.votes = {}
@@ -64,6 +66,7 @@ class GameData:
         self.steam_id = json_data.get("steam_id", 0)
         self.price_current = json_data.get("price_current", -1)
         self.price_original = json_data.get("price_original", -1)
+        self.local = json_data.get("local", False)
 
     def to_json(self):
         return {
@@ -77,6 +80,7 @@ class GameData:
             "steam_id": self.steam_id,
             "price_current": self.price_current,
             "price_original": self.price_original,
+            "local": self.local,
         }
 
     def __str__(self):
@@ -210,17 +214,22 @@ def generate_overview_embed(server_id):
             description += f"\n> Price: {price_text}"
 
         if game_data.player_count > 0:
-            players_emoji = EMOJIS[f"{game_data.player_count}players"]
-            description += f"\n> Players: {players_emoji}"
+            player_count_text = EMOJIS[f"{game_data.player_count}players"]
+            description += f"\n> Players: {player_count_text}"
 
-        if game_data.owned:
-            # Do not display who owns a game if the game is free, to keep the overview concise
-            if game_data.price_original > 0:
-                description += "\n> Owned: "
+        # Do not display who owns a game if the game is free, as you can't buy a free game
+        people_bought_game = (game_data.owned and game_data.price_original > 0)
+        if people_bought_game or game_data.local:
+            description += "\n> Owned: "
+
+            if people_bought_game:
                 # Sums the True/False values, with them corresponding to 1/0
                 owned_count = sum(owned for owned in game_data.owned.values())
                 description += EMOJIS["owned"] * owned_count
                 description += EMOJIS["not_owned"] * (len(game_data.owned) - owned_count)
+
+            if game_data.local:
+                description += "(" + EMOJIS["local"] + ")"
 
         tags = game_data.tags
         if len(tags) > 0:
@@ -619,6 +628,36 @@ async def players(ctx, game_name, player_count):
     await ctx.message.delete()
 
 
+@bot.command(name="local", help="Sets whether a game can be played locally, requiring only one person to own it. Example: !local \"game name\" no. "
+                                "Anything starting with \"y\" means the game is local, and the opposite for anything starting with \"n\". "
+                                "Not entering anything defaults to \"yes\".")
+async def set_local(ctx, game_name, is_local="yes"):
+    server_id = str(ctx.guild.id)
+
+    if is_local[:1] == "y":
+        local = True
+    elif is_local[:1] == "n":
+        local = False
+    else:
+        await ctx.send("Received invalid argument.")
+        return
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        print(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    # Update the "local" field and save the new game data
+    game_data.local = local
+    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+    save_dataset(dataset)
+
+    await update_overview(ctx)
+    await ctx.message.delete()
+
+
 @bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
 async def kick(ctx, member_name):
     member_name = member_name.lower()
@@ -676,8 +715,8 @@ loop.run_forever()
 
 '''
 TODO:
--command to indicate whether a game can be played locally (with only one person having to purchase it)
 -command to indicate whether you've already played the game before
+-command to set the Steam game ID
 -add an "edit" command that shows a temporary message with emojis as functioning as shortcut buttons for commands, when pressing the X emoji, delete the message
 -allow users to set an alias (e.g. an emoji) and show the aliases of the people who voted on a game
 '''
