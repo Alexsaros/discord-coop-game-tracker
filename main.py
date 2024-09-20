@@ -585,7 +585,8 @@ async def tag(ctx, game_name, tag_text):
 @bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. "
                               "Anything starting with \"y\" means you own the game, and the opposite for anything starting with \"n\". "
                               "Not entering anything defaults to \"yes\". "
-                              "How many people own a game will not be shown if the game is free.")
+                              "The amount of people that own a game will not be shown if the game is free. "
+                              "Not owning a game will automatically mark you as being new to it.")
 async def own(ctx, game_name, owns_game="yes"):
     server_id = str(ctx.guild.id)
 
@@ -606,6 +607,8 @@ async def own(ctx, game_name, owns_game="yes"):
 
     # Update the "owned" field and save the new game data
     game_data.owned[str(ctx.author)] = owned
+    if not owned:
+        game_data.played_before[str(ctx.author)] = False
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
