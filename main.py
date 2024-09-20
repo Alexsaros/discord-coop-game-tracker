@@ -484,7 +484,6 @@ async def overview(ctx):
     dataset[str(ctx.guild.id)]["overview_channel_id"] = ctx.channel.id
     save_dataset(dataset)
 
-    await update_overview(ctx)
     await ctx.message.delete()
 
 
