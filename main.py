@@ -104,6 +104,7 @@ def create_new_server_entry():
         "member_count": 1,
         "games": {},
         "overview_message_id": 0,
+        "overview_channel_id": 0,
     }
 
 
@@ -480,6 +481,7 @@ async def overview(ctx):
 
     # Store the new message ID
     dataset[str(ctx.guild.id)]["overview_message_id"] = message.id
+    dataset[str(ctx.guild.id)]["overview_channel_id"] = ctx.channel.id
     save_dataset(dataset)
 
     await update_overview(ctx)
