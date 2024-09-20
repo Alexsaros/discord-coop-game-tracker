@@ -588,13 +588,12 @@ async def kick(ctx, member_name):
 @bot.event
 async def on_command_error(ctx, error):
     print("\nEncountered command error:")
-    print(ctx)
     print(error)
     print(type(error))
     await ctx.send(error)
     timestamp = time.time()
     with open("err.log", "a") as f:
-        f.write(f"{timestamp}\n{ctx}\n{error}\n{traceback.format_exception(error)}\n\n")
+        f.write(f"{timestamp}\n{error}\n{traceback.format_exception(error)}\n\n")
     traceback.print_exception(error)
     raise
 
@@ -603,10 +602,8 @@ async def on_command_error(ctx, error):
 async def on_error(event, *args, **kwargs):
     if event == "on_command_error":
         return
-    print("\nEncountered error:")
-    print(event)
-    print(args)
-    print(kwargs)
+    print(f"\nEncountered error in {event}:")
+    print(f"args: {args}, kwargs: {kwargs}")
     timestamp = time.time()
     with open("err.log", "a") as f:
         f.write(f"{timestamp}\n{event}\n{args}\n{kwargs}\n\n")
