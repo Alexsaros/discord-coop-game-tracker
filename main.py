@@ -19,6 +19,7 @@ STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 DATASET_FILE = "dataset.json"
 
 EMBED_MAX_ITEMS = 25
+EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 
 EMOJIS = {
     "owned": ":video_game:",
