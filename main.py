@@ -115,6 +115,7 @@ def create_new_server_entry():
         "games": {},
         "overview_message_id": 0,
         "overview_channel_id": 0,
+        "aliases": {},
     }
 
 
@@ -220,8 +221,18 @@ def generate_overview_embed(server_id):
 
         if game_data.votes:
             description += "\n> Voted: "
-            voters = game_data.votes.keys()
-            description += " ".join(voters)
+            # Display each voter's alias, falling back to their name if not set
+            aliases = server_dataset.get("aliases", {})
+            voter_names = []
+            voter_aliases = []
+            for voter in game_data.votes.keys():
+                voter_alias = aliases.get(voter)
+                if voter_alias is not None:
+                    voter_aliases.append(voter_alias)
+                else:
+                    voter_names.append(voter)
+            description += " ".join(voter_aliases)
+            description += ", ".join(voter_names)
 
         if game_data.player_count > 0:
             player_count_text = EMOJIS[f"{game_data.player_count}players"]
@@ -549,6 +560,8 @@ async def rate_game(ctx, game_name, score):
 @bot.command(name="overview", help="Displays an overview of the most interesting games. Example: !display. "
                                    "Will update the last occurrence of this message when the data gets updated.")
 async def overview(ctx):
+    server_id = str(ctx.guild.id)
+
     overview_embed = generate_overview_embed(ctx.guild.id)
     if overview_embed is None:
         await ctx.send("No games registered for this server yet.")
@@ -559,8 +572,8 @@ async def overview(ctx):
     dataset = read_dataset()
 
     # Store the new message ID
-    dataset[str(ctx.guild.id)]["overview_message_id"] = message.id
-    dataset[str(ctx.guild.id)]["overview_channel_id"] = ctx.channel.id
+    dataset[server_id]["overview_message_id"] = message.id
+    dataset[server_id]["overview_channel_id"] = ctx.channel.id
     save_dataset(dataset)
 
     await ctx.message.delete()
@@ -742,6 +755,24 @@ async def set_steam_id(ctx, game_name, steam_id):
     await ctx.message.delete()
 
 
+@bot.command(name="alias", help="Sets an alias for yourself, to be displayed in the overview. Example: !alias :sunglasses:. "
+                                "Leave empty to clear your alias.")
+async def set_alias(ctx, new_alias=None):
+    server_id = str(ctx.guild.id)
+
+    dataset = read_dataset()
+    server_dataset = dataset[server_id]
+
+    # Store the new alias
+    aliases = server_dataset.get("aliases", {})
+    aliases[str(ctx.author)] = new_alias
+    server_dataset["aliases"] = aliases
+    save_dataset(dataset)
+
+    await update_overview(server_id)
+    await ctx.message.delete()
+
+
 @bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
 async def kick(ctx, member_name):
     member_name = member_name.lower()
@@ -800,5 +831,4 @@ loop.run_forever()
 '''
 TODO:
 -add an "edit" command that shows a temporary message with emojis as functioning as shortcut buttons for commands, when pressing the X emoji, delete the message
--allow users to set an alias (e.g. an emoji) and show the aliases of the people who voted on a game
 '''
