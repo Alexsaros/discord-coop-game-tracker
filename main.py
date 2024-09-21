@@ -255,7 +255,7 @@ def get_game_embed_field(game_data, server_dataset):
         description += f"\n> Players: {player_count_text}"
 
     # Do not display who owns a game if the game is free, as you can't buy a free game
-    people_bought_game = (game_data.owned and game_data.price_original > 0)
+    people_bought_game = (game_data.owned and game_data.price_original != 0)
     if people_bought_game or game_data.local:
         description += "\n> Owned: "
 
@@ -995,9 +995,3 @@ loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
 loop.create_task(bot.start(BOT_TOKEN))
 loop.run_forever()
-
-
-'''
-TODO:
--add an "edit" command that shows a temporary message with emojis as functioning as shortcut buttons for commands, when pressing the X emoji, delete the message
-'''
