@@ -202,10 +202,10 @@ def sort_games_by_score(server_dataset):
     return sorted(game_scores, key=lambda x: x[1], reverse=True)
 
 
-def get_game_details_embed(game_data, server_dataset):
+def get_game_embed_field(game_data, server_dataset):
     """
-    Gets the details of the given game from the dataset to be displayed in an embed.
-    Returns a dictionary with keys "name", "value", and "inline", as expected by Discord's embed.
+    Gets the details of the given game from the dataset to be displayed in an embed field.
+    Returns a dictionary with keys "name", "value", and "inline", as expected by Discord's embed field.
     """
     description = ""
 
@@ -279,12 +279,12 @@ def get_game_details_embed(game_data, server_dataset):
 
     description = description.strip()
 
-    embed_info = {
+    embed_field_info = {
         "name": f"{game_data.id} - {game_data.name}",
         "value": description,
         "inline": False,
     }
-    return embed_info
+    return embed_field_info
 
 
 def generate_overview_embed(server_id):
@@ -304,8 +304,8 @@ def generate_overview_embed(server_id):
 
     embed = discord.Embed(title=f"Games overview ({total_game_count} total)", color=discord.Color.blue())
     for game_data, score in sorted_games:
-        embed_info = get_game_details_embed(game_data, server_dataset)
-        embed.add_field(**embed_info)
+        embed_field_info = get_game_embed_field(game_data, server_dataset)
+        embed.add_field(**embed_field_info)
 
     return embed
 
@@ -623,6 +623,31 @@ async def overview(ctx):
     dataset[server_id]["overview_message_id"] = message.id
     dataset[server_id]["overview_channel_id"] = ctx.channel.id
     save_dataset(dataset)
+
+    await ctx.message.delete()
+
+
+@bot.command(name="edit", help="Displays the given game as a message to be able edit it using its reactions. Example: !edit \"game name\".")
+async def edit(ctx, game_name):
+    server_id = str(ctx.guild.id)
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        print(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    server_dataset = dataset[server_id]
+
+    # Get info on the game and display it in an embed
+    embed_field_info = get_game_embed_field(game_data, server_dataset)
+    title = embed_field_info["name"]
+    embed_field_info["name"] = ""
+    game_embed = discord.Embed(title=title, color=discord.Color.dark_blue())
+    game_embed.add_field(**embed_field_info)
+
+    await ctx.send(embed=game_embed)
 
     await ctx.message.delete()
 
