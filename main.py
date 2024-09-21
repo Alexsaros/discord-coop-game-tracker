@@ -202,6 +202,91 @@ def sort_games_by_score(server_dataset):
     return sorted(game_scores, key=lambda x: x[1], reverse=True)
 
 
+def get_game_details_embed(game_data, server_dataset):
+    """
+    Gets the details of the given game from the dataset to be displayed in an embed.
+    Returns a dictionary with keys "name", "value", and "inline", as expected by Discord's embed.
+    """
+    description = ""
+
+    if game_data.price_original >= 0:
+        price_original = game_data.price_original
+        price_current = game_data.price_current
+
+        if price_original == 0:
+            price_text = EMOJIS["free"]
+        else:
+            price_text = f"€{price_original:.2f}"
+            # Check if the game has a discount
+            if price_current != price_original:
+                if price_current == 0:
+                    # The game is currently free
+                    price_text = f"~~{price_text}~~ **Currently free**"
+                else:
+                    discount_percent = int(((price_original - price_current) / price_original) * 100)
+                    price_text = f"~~{price_text}~~ **€{price_current:.2f}** (-{discount_percent}%)"
+
+        # If we have the game ID, add a hyperlink on the game's price
+        if game_data.steam_id:
+            link = f"https://store.steampowered.com/app/{game_data.steam_id}"
+            price_text = f"[{price_text}]({link})"
+
+        description += f"\n> Price: {price_text}"
+
+    if game_data.votes:
+        description += "\n> Voted: "
+        # Display each voter's alias, falling back to their name if not set
+        aliases = server_dataset.get("aliases", {})
+        voter_names = []
+        voter_aliases = []
+        for voter in game_data.votes.keys():
+            voter_alias = aliases.get(voter)
+            if voter_alias is not None:
+                voter_aliases.append(voter_alias)
+            else:
+                voter_names.append(voter)
+        description += " ".join(voter_aliases)
+        description += ", ".join(voter_names)
+
+    if game_data.player_count > 0:
+        player_count_text = EMOJIS[f"{game_data.player_count}players"]
+        description += f"\n> Players: {player_count_text}"
+
+    # Do not display who owns a game if the game is free, as you can't buy a free game
+    people_bought_game = (game_data.owned and game_data.price_original > 0)
+    if people_bought_game or game_data.local:
+        description += "\n> Owned: "
+
+        if people_bought_game:
+            # Sums the True/False values, with them corresponding to 1/0
+            owned_count = sum(owned for owned in game_data.owned.values())
+            description += EMOJIS["owned"] * owned_count
+            description += EMOJIS["not_owned"] * (len(game_data.owned) - owned_count)
+
+        if game_data.local:
+            description += "(" + EMOJIS["local"] + ")"
+
+    if game_data.played_before:
+        description += "\n> Experience: "
+        # Sums the True/False values, with them corresponding to 1/0
+        played_before_count = sum(played for played in game_data.played_before.values())
+        description += EMOJIS["experienced"] * played_before_count
+        description += EMOJIS["new"] * (len(game_data.played_before) - played_before_count)
+
+    tags = game_data.tags
+    if len(tags) > 0:
+        description += "\n> " + "\n> ".join(tags)
+
+    description = description.strip()
+
+    embed_info = {
+        "name": f"{game_data.id} - {game_data.name}",
+        "value": description,
+        "inline": False,
+    }
+    return embed_info
+
+
 def generate_overview_embed(server_id):
     server_id = str(server_id)
 
@@ -219,83 +304,9 @@ def generate_overview_embed(server_id):
 
     embed = discord.Embed(title=f"Games overview ({total_game_count} total)", color=discord.Color.blue())
     for game_data, score in sorted_games:
-        description = ""
+        embed_info = get_game_details_embed(game_data, server_dataset)
+        embed.add_field(**embed_info)
 
-        if game_data.price_original >= 0:
-            price_original = game_data.price_original
-            price_current = game_data.price_current
-
-            if price_original == 0:
-                price_text = EMOJIS["free"]
-            else:
-                price_text = f"€{price_original:.2f}"
-                # Check if the game has a discount
-                if price_current != price_original:
-                    if price_current == 0:
-                        # The game is currently free
-                        price_text = f"~~{price_text}~~ **Currently free**"
-                    else:
-                        discount_percent = int(((price_original - price_current) / price_original) * 100)
-                        price_text = f"~~{price_text}~~ **€{price_current:.2f}** (-{discount_percent}%)"
-
-            # If we have the game ID, add a hyperlink on the game's price
-            if game_data.steam_id:
-                link = f"https://store.steampowered.com/app/{game_data.steam_id}"
-                price_text = f"[{price_text}]({link})"
-
-            description += f"\n> Price: {price_text}"
-
-        if game_data.votes:
-            description += "\n> Voted: "
-            # Display each voter's alias, falling back to their name if not set
-            aliases = server_dataset.get("aliases", {})
-            voter_names = []
-            voter_aliases = []
-            for voter in game_data.votes.keys():
-                voter_alias = aliases.get(voter)
-                if voter_alias is not None:
-                    voter_aliases.append(voter_alias)
-                else:
-                    voter_names.append(voter)
-            description += " ".join(voter_aliases)
-            description += ", ".join(voter_names)
-
-        if game_data.player_count > 0:
-            player_count_text = EMOJIS[f"{game_data.player_count}players"]
-            description += f"\n> Players: {player_count_text}"
-
-        # Do not display who owns a game if the game is free, as you can't buy a free game
-        people_bought_game = (game_data.owned and game_data.price_original > 0)
-        if people_bought_game or game_data.local:
-            description += "\n> Owned: "
-
-            if people_bought_game:
-                # Sums the True/False values, with them corresponding to 1/0
-                owned_count = sum(owned for owned in game_data.owned.values())
-                description += EMOJIS["owned"] * owned_count
-                description += EMOJIS["not_owned"] * (len(game_data.owned) - owned_count)
-
-            if game_data.local:
-                description += "(" + EMOJIS["local"] + ")"
-
-        if game_data.played_before:
-            description += "\n> Experience: "
-            # Sums the True/False values, with them corresponding to 1/0
-            played_before_count = sum(played for played in game_data.played_before.values())
-            description += EMOJIS["experienced"] * played_before_count
-            description += EMOJIS["new"] * (len(game_data.played_before) - played_before_count)
-
-        tags = game_data.tags
-        if len(tags) > 0:
-            description += "\n> " + "\n> ".join(tags)
-
-        description = description.strip()
-
-        embed.add_field(
-            name=f"{game_data.id} - {game_data.name}",
-            value=description,
-            inline=False
-        )
     return embed
 
 
