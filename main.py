@@ -5,6 +5,7 @@ import asyncio
 import json
 import time
 import requests
+import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
 import random
@@ -505,7 +506,8 @@ def search_steam_for_game(game_name):
 
 @bot.event
 async def on_ready():
-    log(f"\n\n\n{bot.user} has connected to Discord!")
+    log(f"\n\n\n{datetime.datetime.now()}")
+    log(f"{bot.user} has connected to Discord!")
     await update_dataset_steam_prices()
     log("Finished updating Steam prices")
 
