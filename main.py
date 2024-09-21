@@ -491,6 +491,17 @@ async def on_ready():
     print("Finished updating Steam prices")
 
 
+@bot.event
+async def on_reaction_add(reaction, user):
+    # Ignore the bot's own reactions
+    if user == bot.user:
+        return
+
+    # Check if we need to delete the bot's message
+    if reaction.emoji == "❌":
+        await reaction.message.delete()
+
+
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
 async def add_game(ctx, game_name):
     server_id = str(ctx.guild.id)
