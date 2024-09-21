@@ -509,9 +509,66 @@ async def on_reaction_add(reaction, user):
     if user == bot.user:
         return
 
+    message = reaction.message
+    ctx = await bot.get_context(message)
     # Check if we need to delete the bot's message
     if reaction.emoji == "❌":
-        await reaction.message.delete()
+        await message.delete()
+        return
+
+    if len(message.embeds) == 0:
+        return
+    # Assume the message only has 1 embed, as multiple aren't possible
+    embed = message.embeds[0]
+    # Use the embed color to identify the embed's function
+    if embed.color == EDIT_GAME_EMBED_COLOR:
+        # Split the title into (game_id, game_name)
+        if " - " not in embed.title:
+            print(f"Error: incorrect game embed title format: \"{embed.title}\".")
+            return
+        game_id, game_name = embed.title.split(" - ", 1)
+
+        # Get the game's data
+        dataset = read_dataset()
+        server_id = str(ctx.guild.id)
+        server_dataset = dataset[server_id]
+        game_data = filter_game_dataset(dataset, server_id, game_name)
+        if game_data is None:
+            print(f"Could not find game: {str(game_data)}")
+            return
+
+        # Try to perform an action based on the added reaction
+        try:
+            score_emojis = {
+                "1️⃣": 1,
+                "2️⃣": 2,
+                "3️⃣": 3,
+                "4️⃣": 4,
+                "5️⃣": 5,
+                "6️⃣": 6,
+                "7️⃣": 7,
+                "8️⃣": 8,
+                "9️⃣": 9,
+                "🔟": 10,
+            }
+            if reaction.emoji in score_emojis:
+                score = score_emojis[reaction.emoji]
+                game_data.votes[str(user)] = score
+                return
+        finally:
+            # Save the edited game info
+            dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+            save_dataset(dataset)
+
+            # Get the updated game info and display it in the embed
+            embed_field_info = get_game_embed_field(game_data, server_dataset)
+            title = embed_field_info["name"]
+            embed_field_info["name"] = ""
+            game_embed = discord.Embed(title=title, color=EDIT_GAME_EMBED_COLOR)
+            game_embed.add_field(**embed_field_info)
+
+            await message.edit(embed=game_embed)
+            await update_overview(server_id)
 
 
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
