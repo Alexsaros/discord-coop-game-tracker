@@ -7,6 +7,7 @@ import time
 import requests
 from discord.ext import commands
 from dotenv import load_dotenv
+import random
 
 
 load_dotenv()
@@ -34,7 +35,25 @@ intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+class CustomHelpCommand(commands.DefaultHelpCommand):
+
+    async def send_bot_help(self, mapping):
+        # 10% chance to send a spooky message
+        chance_roll = random.randint(1, 10)
+        if chance_roll == 1:
+            spooky_messages = ["Nobody can help you now...", "Help is near... but so is something else.", "It's too late for help now..."]
+            spooky_message = random.choice(spooky_messages)
+            channel = self.get_destination()
+            message = await channel.send(spooky_message)
+            time.sleep(2.5)
+            await message.delete()
+
+        # Send the actual help message
+        await super().send_bot_help(mapping)
+
+
+bot = commands.Bot(command_prefix="!", intents=intents, help_command=CustomHelpCommand())
 
 
 class GameData:
