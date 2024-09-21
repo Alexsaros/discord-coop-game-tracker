@@ -709,8 +709,9 @@ async def set_steam_id(ctx, game_name, steam_id):
 
     try:
         steam_id = int(steam_id)
-    except ValueError:
-        await ctx.send("Steam ID must be a number.")
+        assert steam_id >= 0
+    except (ValueError, AssertionError):
+        await ctx.send("Steam ID must be a positive number.")
         return
 
     dataset = read_dataset()
@@ -723,8 +724,12 @@ async def set_steam_id(ctx, game_name, steam_id):
     # Update the "steam_id" field, retrieve the price again, and save the new game data
     game_data.steam_id = steam_id
     steam_game_info = get_game_price(steam_id)
-    game_data.price_current = steam_game_info["price_current"]
-    game_data.price_original = steam_game_info["price_original"]
+    # Default to no price if the Steam game couldn't be found
+    game_data.price_current = -1
+    game_data.price_original = -1
+    if steam_game_info is not None:
+        game_data.price_current = steam_game_info["price_current"]
+        game_data.price_original = steam_game_info["price_original"]
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
