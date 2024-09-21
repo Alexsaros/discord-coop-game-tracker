@@ -677,7 +677,7 @@ async def set_local(ctx, game_name, is_local="yes"):
                                  "Anything starting with \"y\" means you've experienced at least a decent part of the game before. "
                                  "Anything starting with \"n\" means you're unfamiliar with the game. "
                                  "Not entering anything defaults to \"yes\".")
-async def set_local(ctx, game_name, played_before="yes"):
+async def set_played(ctx, game_name, played_before="yes"):
     server_id = str(ctx.guild.id)
 
     if played_before[:1] == "y":
