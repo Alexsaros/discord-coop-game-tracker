@@ -218,6 +218,11 @@ def generate_overview_embed(server_id):
 
             description += f"\n> Price: {price_text}"
 
+        if game_data.votes:
+            description += "\n> Voted: "
+            voters = game_data.votes.keys()
+            description += " ".join(voters)
+
         if game_data.player_count > 0:
             player_count_text = EMOJIS[f"{game_data.player_count}players"]
             description += f"\n> Players: {player_count_text}"
