@@ -18,6 +18,8 @@ STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 
 DATASET_FILE = "dataset.json"
 
+EMBED_MAX_ITEMS = 25
+
 EMOJIS = {
     "owned": ":video_game:",
     "not_owned": ":money_with_wings:",
@@ -211,8 +213,11 @@ def generate_overview_embed(server_id):
     server_dataset = dataset[server_id]
 
     sorted_games = sort_games_by_score(server_dataset)
+    total_game_count = len(sorted_games)
+    # Can only show 25 games at a time
+    sorted_games = sorted_games[:EMBED_MAX_ITEMS]
 
-    embed = discord.Embed(title="Games Overview", color=discord.Color.blue())
+    embed = discord.Embed(title=f"Games overview ({total_game_count} total)", color=discord.Color.blue())
     for game_data, score in sorted_games:
         description = ""
 
