@@ -39,8 +39,10 @@ intents.members = True
 class CustomHelpCommand(commands.DefaultHelpCommand):
 
     async def send_bot_help(self, mapping):
-        # 10% chance to send a spooky message
-        chance_roll = random.randint(1, 10)
+        await self.context.message.delete()
+
+        # 20% chance to send a spooky message
+        chance_roll = random.randint(1, 5)
         if chance_roll == 1:
             spooky_messages = ["Nobody can help you now...", "Help is near... but so is something else.", "It's too late for help now..."]
             spooky_message = random.choice(spooky_messages)
