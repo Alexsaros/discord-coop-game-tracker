@@ -61,6 +61,12 @@ class CustomHelpCommand(commands.DefaultHelpCommand):
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=CustomHelpCommand())
 
 
+def log(message):
+    print(message)
+    with open("log.log", "a", encoding="utf-8") as f:
+        f.write(message + "\n")
+
+
 class GameData:
 
     id = -1
@@ -119,7 +125,7 @@ class GameData:
 
 def read_dataset():
     if not os.path.exists(DATASET_FILE):
-        print(f"{DATASET_FILE} does not exist. Creating it...")
+        log(f"{DATASET_FILE} does not exist. Creating it...")
         dataset = {}
     else:
         with open(DATASET_FILE, "r") as file:
@@ -295,7 +301,7 @@ def generate_overview_embed(server_id):
     dataset = read_dataset()
     # Try to narrow down the dataset to a specific server
     if server_id not in dataset:
-        print(f"Could not find server {server_id} in the dataset.")
+        log(f"Could not find server {server_id} in the dataset.")
         return None
     server_dataset = dataset[server_id]
 
@@ -319,13 +325,13 @@ async def update_overview(server_id):
     dataset = read_dataset()
     server_dataset = dataset.get(server_id)
     if server_dataset is None:
-        print(f"Could not find server with ID {server_id} in dataset.")
+        log(f"Could not find server with ID {server_id} in dataset.")
         return
 
     # Get the Discord server object
     server_object = bot.get_guild(int(server_id))
     if server_object is None:
-        print(f"Discord could not find server with ID {server_id}.")
+        log(f"Discord could not find server with ID {server_id}.")
         return
 
     # Get the channel ID in which the overview message was sent
@@ -337,13 +343,13 @@ async def update_overview(server_id):
     # Get the Discord channel object
     channel_object = server_object.get_channel(overview_channel_id)
     if channel_object is None:
-        print(f"Discord could not find channel with ID {overview_channel_id}.")
+        log(f"Discord could not find channel with ID {overview_channel_id}.")
         return
 
     # Get the Discord overview message object
     overview_message_id = server_dataset.get("overview_message_id")
     if overview_message_id in (None, 0):
-        print(f"Error: overview_message_id not found, but overview_channel_id is present for server {server_id}.")
+        log(f"Error: overview_message_id not found, but overview_channel_id is present for server {server_id}.")
         return
 
     overview_message = await channel_object.fetch_message(overview_message_id)
@@ -381,14 +387,14 @@ def get_game_price(game_id):
     response = requests.get(url, params=params)
 
     if response.status_code >= 300:
-        print(f"Failed to get game with ID \"{game_id}\" using Steam API: {response.status_code}")
-        print(response.json())
+        log(f"Failed to get game with ID \"{game_id}\" using Steam API: {response.status_code}")
+        log(response.json())
         return None
 
     response_json = response.json()
     steam_game_data = response_json.get(game_id, {}).get("data", {})
     if not steam_game_data:
-        print(f"Warning: missing Steam info for game ID {game_id}.")
+        log(f"Warning: missing Steam info for game ID {game_id}.")
         return None
 
     game_name = steam_game_data["name"]
@@ -399,14 +405,14 @@ def get_game_price(game_id):
     if not price_overview:
         # Sanity check to see if the game is really free
         if not "is_free":
-            print(f"Warning: is_free is False, but missing price_overview for game {game_name}.")
+            log(f"Warning: is_free is False, but missing price_overview for game {game_name}.")
         else:
             price_current = 0
             price_original = 0
     else:
         price_currency = price_overview["currency"]
         if price_currency != "EUR":
-            print(f"Error: received currency {price_currency} for game {game_name}.")
+            log(f"Error: received currency {price_currency} for game {game_name}.")
         else:
             price_current = price_overview["final"] / 100
             price_original = price_overview["initial"] / 100
@@ -455,8 +461,8 @@ def search_steam_for_game(game_name):
     response = requests.get(url, params=params)
 
     if response.status_code >= 300:
-        print(f"Failed to search for \"{game_name}\" using Steam API: {response.status_code}")
-        print(response.json())
+        log(f"Failed to search for \"{game_name}\" using Steam API: {response.status_code}")
+        log(response.json())
         return None
 
     response_json = response.json()
@@ -483,7 +489,7 @@ def search_steam_for_game(game_name):
         price_currency = price_overview["currency"]
         if price_currency != "EUR":
             game_name = game_match["name"]
-            print(f"Error: received currency {price_currency} for game {game_name}.")
+            log(f"Error: received currency {price_currency} for game {game_name}.")
         else:
             price_current = price_overview["final"] / 100
             price_original = price_overview["initial"] / 100
@@ -499,9 +505,9 @@ def search_steam_for_game(game_name):
 
 @bot.event
 async def on_ready():
-    print(f"{bot.user} has connected to Discord!")
+    log(f"\n\n\n{bot.user} has connected to Discord!")
     await update_dataset_steam_prices()
-    print("Finished updating Steam prices")
+    log("Finished updating Steam prices")
 
 
 @bot.event
@@ -509,6 +515,7 @@ async def on_reaction_add(reaction, user):
     # Ignore the bot's own reactions
     if user == bot.user:
         return
+    log(f"{user} added reaction: {reaction.emoji}")
 
     message = reaction.message
     ctx = await bot.get_context(message)
@@ -525,7 +532,7 @@ async def on_reaction_add(reaction, user):
     if embed.color == EDIT_GAME_EMBED_COLOR:
         # Split the title into (game_id, game_name)
         if " - " not in embed.title:
-            print(f"Error: incorrect game embed title format: \"{embed.title}\".")
+            log(f"Error: incorrect game embed title format: \"{embed.title}\".")
             return
         game_id, game_name = embed.title.split(" - ", 1)
 
@@ -535,7 +542,7 @@ async def on_reaction_add(reaction, user):
         server_dataset = dataset[server_id]
         game_data = filter_game_dataset(dataset, server_id, game_name)
         if game_data is None:
-            print(f"Could not find game: {str(game_data)}")
+            log(f"Could not find game: {str(game_data)}")
             return
 
         # Try to perform an action based on the added reaction
@@ -608,6 +615,7 @@ async def on_reaction_add(reaction, user):
 
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
 async def add_game(ctx, game_name):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     try:
@@ -620,7 +628,7 @@ async def add_game(ctx, game_name):
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is not None:
-        print(f"Game already added: {str(game_data)}")
+        log(f"Game already added: {str(game_data)}")
         await ctx.send("This game has already been added.")
         return
 
@@ -652,12 +660,13 @@ async def add_game(ctx, game_name):
 @bot.command(name="remove", help="Removes a game from the list. Example: !remove \"game name\". "
                                  "It is possible to use the game's ID instead of its name.")
 async def remove_game(ctx, game_name):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
-        print(f"Could not find game: {str(game_data)}")
+        log(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game.")
         return
 
@@ -673,6 +682,7 @@ async def remove_game(ctx, game_name):
                                "It is possible to use the game's ID instead of its name. "
                                "If you haven't voted for a game, your vote will default to 5.")
 async def rate_game(ctx, game_name, score):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     try:
@@ -685,7 +695,7 @@ async def rate_game(ctx, game_name, score):
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
-        print(f"Could not find game: {str(game_data)}")
+        log(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
         return
 
@@ -701,6 +711,7 @@ async def rate_game(ctx, game_name, score):
 @bot.command(name="overview", help="Displays an overview of the most interesting games. Example: !display. "
                                    "Will update the last occurrence of this message when the data gets updated.")
 async def overview(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     overview_embed = generate_overview_embed(ctx.guild.id)
@@ -722,12 +733,13 @@ async def overview(ctx):
 
 @bot.command(name="edit", help="Displays the given game as a message to be able edit it using its reactions. Example: !edit \"game name\".")
 async def edit(ctx, game_name):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
-        print(f"Could not find game: {str(game_data)}")
+        log(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
         return
 
@@ -750,12 +762,13 @@ async def edit(ctx, game_name):
 
 @bot.command(name="tag", help="Adds an informative tag to a game. Example: !tag \"game name\" \"PvP only\".")
 async def tag(ctx, game_name, tag_text):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
-        print(f"Could not find game: {str(game_data)}")
+        log(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
         return
 
@@ -774,6 +787,7 @@ async def tag(ctx, game_name, tag_text):
                               "The amount of people that own a game will not be shown if the game is free. "
                               "Not owning a game will automatically mark you as being new to it.")
 async def own(ctx, game_name, owns_game="yes"):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     if owns_game[:1] == "y":
@@ -787,7 +801,7 @@ async def own(ctx, game_name, owns_game="yes"):
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
-        print(f"Could not find game: {str(game_data)}")
+        log(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
         return
 
@@ -804,6 +818,7 @@ async def own(ctx, game_name, owns_game="yes"):
 
 @bot.command(name="players", help="Sets with how many players a game can be played, ranging from 1-4. Example: !players \"game name\" 4.")
 async def players(ctx, game_name, player_count):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     try:
@@ -816,7 +831,7 @@ async def players(ctx, game_name, player_count):
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
-        print(f"Could not find game: {str(game_data)}")
+        log(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
         return
 
@@ -833,6 +848,7 @@ async def players(ctx, game_name, player_count):
                                 "Anything starting with \"y\" means the game is local, and the opposite for anything starting with \"n\". "
                                 "Not entering anything defaults to \"yes\".")
 async def set_local(ctx, game_name, is_local="yes"):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     if is_local[:1] == "y":
@@ -846,7 +862,7 @@ async def set_local(ctx, game_name, is_local="yes"):
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
-        print(f"Could not find game: {str(game_data)}")
+        log(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
         return
 
@@ -864,6 +880,7 @@ async def set_local(ctx, game_name, is_local="yes"):
                                  "Anything starting with \"n\" means you're unfamiliar with the game. "
                                  "Not entering anything defaults to \"yes\".")
 async def set_played(ctx, game_name, played_before="yes"):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     if played_before[:1] == "y":
@@ -877,7 +894,7 @@ async def set_played(ctx, game_name, played_before="yes"):
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
-        print(f"Could not find game: {str(game_data)}")
+        log(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
         return
 
@@ -892,6 +909,7 @@ async def set_played(ctx, game_name, played_before="yes"):
 
 @bot.command(name="steam_id", help="Links a game to a steam ID for the purpose of retrieving prices. Example: !steam_id \"game name\" 105600.")
 async def set_steam_id(ctx, game_name, steam_id):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     try:
@@ -904,7 +922,7 @@ async def set_steam_id(ctx, game_name, steam_id):
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
     if game_data is None:
-        print(f"Could not find game: {str(game_data)}")
+        log(f"Could not find game: {str(game_data)}")
         await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
         return
 
@@ -927,6 +945,7 @@ async def set_steam_id(ctx, game_name, steam_id):
 @bot.command(name="alias", help="Sets an alias for yourself, to be displayed in the overview. Example: !alias :sunglasses:. "
                                 "Leave empty to clear your alias.")
 async def set_alias(ctx, new_alias=None):
+    log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
     dataset = read_dataset()
@@ -944,6 +963,7 @@ async def set_alias(ctx, new_alias=None):
 
 @bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
 async def kick(ctx, member_name):
+    log(f"{ctx.author}: {ctx.message.content}")
     member_name = member_name.lower()
     if member_name in ["co-op game tracker", "coop game tracker"]:
         await ctx.send("Ouch! Stop kicking me! :cry:")
@@ -972,7 +992,7 @@ async def on_command_error(ctx, error):
     print(type(error))
     await ctx.send(error)
     timestamp = time.time()
-    with open("err.log", "a") as f:
+    with open("err.log", "a", encoding="utf-8") as f:
         f.write(f"{timestamp}\n{error}\n{traceback.format_exception(error)}\n\n")
     traceback.print_exception(error)
     raise
@@ -985,7 +1005,7 @@ async def on_error(event, *args, **kwargs):
     print(f"\nEncountered error in {event}:")
     print(f"args: {args}, kwargs: {kwargs}")
     timestamp = time.time()
-    with open("err.log", "a") as f:
+    with open("err.log", "a", encoding="utf-8") as f:
         f.write(f"{timestamp}\n{event}\n{args}\n{kwargs}\n\n")
     raise
 
