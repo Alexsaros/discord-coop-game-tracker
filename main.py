@@ -257,18 +257,41 @@ def generate_overview_embed(server_id):
     return embed
 
 
-async def update_overview(ctx):
-    server_id = str(ctx.guild.id)
+async def update_overview(server_id):
+    server_id = str(server_id)
 
+    # Get the server dataset
     dataset = read_dataset()
+    server_dataset = dataset.get(server_id)
+    if server_dataset is None:
+        print(f"Could not find server with ID {server_id} in dataset.")
+        return
 
-    if server_id not in dataset or \
-            "overview_message_id" not in dataset[server_id]:
+    # Get the Discord server object
+    server_object = bot.get_guild(int(server_id))
+    if server_object is None:
+        print(f"Discord could not find server with ID {server_id}.")
         return
-    overview_message_id = dataset[server_id]["overview_message_id"]
-    if overview_message_id == 0:
+
+    # Get the channel ID in which the overview message was sent
+    overview_channel_id = server_dataset.get("overview_channel_id")
+    if overview_channel_id in (None, 0):
+        # This server does not have an overview message
         return
-    overview_message = await ctx.fetch_message(overview_message_id)
+
+    # Get the Discord channel object
+    channel_object = server_object.get_channel(overview_channel_id)
+    if channel_object is None:
+        print(f"Discord could not find channel with ID {overview_channel_id}.")
+        return
+
+    # Get the Discord overview message object
+    overview_message_id = server_dataset.get("overview_message_id")
+    if overview_message_id in (None, 0):
+        print(f"Error: overview_message_id not found, but overview_channel_id is present for server {server_id}.")
+        return
+
+    overview_message = await channel_object.fetch_message(overview_message_id)
 
     updated_overview_embed = generate_overview_embed(server_id)
     if updated_overview_embed is not None:
@@ -277,32 +300,8 @@ async def update_overview(ctx):
 
 async def update_all_overviews():
     dataset = read_dataset()
-    for server_id, server_dataset in dataset.items():
-        server_object = bot.get_guild(int(server_id))
-        if server_object is None:
-            print(f"Could not find server with ID {server_id}.")
-            continue
-
-        overview_channel_id = server_dataset.get("overview_channel_id")
-        if overview_channel_id in (None, 0):
-            # This server does not have an overview message
-            continue
-
-        channel_object = server_object.get_channel(overview_channel_id)
-        if channel_object is None:
-            print(f"Could not find channel with ID {overview_channel_id}.")
-            continue
-
-        overview_message_id = server_dataset.get("overview_message_id")
-        if overview_message_id in (None, 0):
-            print(f"Error: overview_message_id not found, but overview_channel_id is present for server {server_id}.")
-            continue
-
-        overview_message = await channel_object.fetch_message(overview_message_id)
-
-        updated_overview_embed = generate_overview_embed(server_id)
-        if updated_overview_embed is not None:
-            await overview_message.edit(embed=updated_overview_embed)
+    for server_id in dataset:
+        await update_overview(server_id)
 
 
 def get_game_price(game_id):
@@ -452,14 +451,14 @@ async def on_ready():
 
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
 async def add_game(ctx, game_name):
+    server_id = str(ctx.guild.id)
+
     try:
         int(game_name)
         await ctx.send("Game name cannot be a number.")
         return
     except ValueError:
         pass
-
-    server_id = str(ctx.guild.id)
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
@@ -489,7 +488,7 @@ async def add_game(ctx, game_name):
 
     save_dataset(dataset)
 
-    await update_overview(ctx)
+    await update_overview(server_id)
     await ctx.message.delete()
 
 
@@ -509,7 +508,7 @@ async def remove_game(ctx, game_name):
     del dataset[server_id]["games"][str(game_data.id)]
     save_dataset(dataset)
 
-    await update_overview(ctx)
+    await update_overview(server_id)
     await ctx.message.delete()
 
 
@@ -538,7 +537,7 @@ async def rate_game(ctx, game_name, score):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(ctx)
+    await update_overview(server_id)
     await ctx.message.delete()
 
 
@@ -578,7 +577,7 @@ async def tag(ctx, game_name, tag_text):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(ctx)
+    await update_overview(server_id)
     await ctx.message.delete()
 
 
@@ -612,7 +611,7 @@ async def own(ctx, game_name, owns_game="yes"):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(ctx)
+    await update_overview(server_id)
     await ctx.message.delete()
 
 
@@ -639,7 +638,7 @@ async def players(ctx, game_name, player_count):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(ctx)
+    await update_overview(server_id)
     await ctx.message.delete()
 
 
@@ -669,7 +668,7 @@ async def set_local(ctx, game_name, is_local="yes"):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(ctx)
+    await update_overview(server_id)
     await ctx.message.delete()
 
 
@@ -700,7 +699,7 @@ async def set_played(ctx, game_name, played_before="yes"):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(ctx)
+    await update_overview(server_id)
     await ctx.message.delete()
 
 
@@ -729,7 +728,7 @@ async def set_steam_id(ctx, game_name, steam_id):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(ctx)
+    await update_overview(server_id)
     await ctx.message.delete()
 
 
