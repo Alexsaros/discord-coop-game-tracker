@@ -73,12 +73,13 @@ class GameData:
     price_current = -1
     price_original = -1
     local = False
-    played_before = False
+    played_before = None
 
     def __init__(self, json_data=None):
         self.votes = {}
         self.tags = []
         self.owned = {}
+        self.played_before = {}
         if json_data:
             self.load_json(json_data)
 
