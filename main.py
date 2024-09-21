@@ -644,12 +644,15 @@ async def edit(ctx, game_name):
     embed_field_info = get_game_embed_field(game_data, server_dataset)
     title = embed_field_info["name"]
     embed_field_info["name"] = ""
-    game_embed = discord.Embed(title=title, color=discord.Color.dark_blue())
+    game_embed = discord.Embed(title=title, color=EDIT_GAME_EMBED_COLOR)
     game_embed.add_field(**embed_field_info)
 
-    await ctx.send(embed=game_embed)
-
     await ctx.message.delete()
+
+    message = await ctx.send(embed=game_embed)
+    emoji_reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🎮", "💸", "🧍", "🧑‍🤝‍🧑", "👨‍👧‍👦", "👨‍👨‍👧‍👦", "📡", "🧠", "🆕", "❌"]
+    for reaction in emoji_reactions:
+        await message.add_reaction(reaction)
 
 
 @bot.command(name="tag", help="Adds an informative tag to a game. Example: !tag \"game name\" \"PvP only\".")
