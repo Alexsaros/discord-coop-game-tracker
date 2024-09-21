@@ -555,6 +555,40 @@ async def on_reaction_add(reaction, user):
                 score = score_emojis[reaction.emoji]
                 game_data.votes[str(user)] = score
                 return
+
+            owned_emojis = {
+                "🎮": True,
+                "💸": False,
+            }
+            if reaction.emoji in owned_emojis:
+                is_owned = owned_emojis[reaction.emoji]
+                game_data.owned[str(user)] = is_owned
+                return
+
+            player_count_emojis = {
+                "🧍": 1,
+                "🧑‍🤝‍🧑": 2,
+                "👨‍👧‍👦": 3,
+                "👨‍👨‍👧‍👦": 4,
+            }
+            if reaction.emoji in player_count_emojis:
+                player_count = player_count_emojis[reaction.emoji]
+                game_data.player_count = player_count
+                return
+
+            if reaction.emoji == "📡":
+                game_data.local = True
+                return
+
+            played_before_emojis = {
+                "🧠": True,
+                "🆕": False,
+            }
+            if reaction.emoji in played_before_emojis:
+                played_before = played_before_emojis[reaction.emoji]
+                game_data.played_before[str(user)] = played_before
+                return
+
         finally:
             # Save the edited game info
             dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
