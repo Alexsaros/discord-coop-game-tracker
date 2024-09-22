@@ -44,6 +44,8 @@ class CustomHelpCommand(commands.DefaultHelpCommand):
 
     async def send_bot_help(self, mapping):
         await self.context.message.delete()
+        self.width = 1000   # Allows all command descriptions to be displayed
+        self.no_category = "Commands"
 
         # 20% chance to send a spooky message
         chance_roll = random.randint(1, 5)
@@ -659,8 +661,7 @@ async def add_game(ctx, game_name):
     await ctx.message.delete()
 
 
-@bot.command(name="remove", help="Removes a game from the list. Example: !remove \"game name\". "
-                                 "It is possible to use the game's ID instead of its name.")
+@bot.command(name="remove", help="Removes a game from the list. Example: !remove \"game name\".")
 async def remove_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
@@ -680,10 +681,8 @@ async def remove_game(ctx, game_name):
     await ctx.message.delete()
 
 
-@bot.command(name="vote", help="Sets your preference for playing a game, between 0-10 (including decimals). Example: !vote \"game name\" 7.5. "
-                               "It is possible to use the game's ID instead of its name. "
-                               "If you haven't voted for a game, your vote will default to 5.")
-async def rate_game(ctx, game_name, score):
+@bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. Default vote is 5.")
+async def rate_game(ctx, game_name, score=5):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
@@ -710,8 +709,7 @@ async def rate_game(ctx, game_name, score):
     await ctx.message.delete()
 
 
-@bot.command(name="overview", help="Displays an overview of the most interesting games. Example: !display. "
-                                   "Will update the last occurrence of this message when the data gets updated.")
+@bot.command(name="overview", help="Displays a live overview of the most promising games. Example: !display.")
 async def overview(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
@@ -808,11 +806,7 @@ async def remove_tag(ctx, game_name, tag_text):
     await ctx.message.delete()
 
 
-@bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. "
-                              "Anything starting with \"y\" means you own the game, and the opposite for anything starting with \"n\". "
-                              "Not entering anything defaults to \"yes\". "
-                              "The amount of people that own a game will not be shown if the game is free. "
-                              "Not owning a game will automatically mark you as being new to it.")
+@bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. Defaults to \"yes\".")
 async def own(ctx, game_name, owns_game="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
@@ -871,9 +865,7 @@ async def players(ctx, game_name, player_count):
     await ctx.message.delete()
 
 
-@bot.command(name="local", help="Sets whether a game can be played locally, requiring only one person to own it. Example: !local \"game name\" no. "
-                                "Anything starting with \"y\" means the game is local, and the opposite for anything starting with \"n\". "
-                                "Not entering anything defaults to \"yes\".")
+@bot.command(name="local", help="Sets whether a game can be played together with one copy. Example: !local \"game name\" no. Defaults to \"yes\".")
 async def set_local(ctx, game_name, is_local="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
@@ -902,10 +894,7 @@ async def set_local(ctx, game_name, is_local="yes"):
     await ctx.message.delete()
 
 
-@bot.command(name="played", help="Sets whether you have played a game before or not. Example: !played \"game name\" no. "
-                                 "Anything starting with \"y\" means you've experienced at least a decent part of the game before. "
-                                 "Anything starting with \"n\" means you're unfamiliar with the game. "
-                                 "Not entering anything defaults to \"yes\".")
+@bot.command(name="played", help="Sets whether you have played a game before or not. Example: !played \"game name\" no. Defaults to \"yes\".")
 async def set_played(ctx, game_name, played_before="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
@@ -969,8 +958,7 @@ async def set_steam_id(ctx, game_name, steam_id):
     await ctx.message.delete()
 
 
-@bot.command(name="alias", help="Sets an alias for yourself, to be displayed in the overview. Example: !alias :sunglasses:. "
-                                "Leave empty to clear your alias.")
+@bot.command(name="alias", help="Sets an alias for yourself, to be displayed in the overview. Example: !alias :sunglasses:. Leave empty to clear it.")
 async def set_alias(ctx, new_alias=None):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
