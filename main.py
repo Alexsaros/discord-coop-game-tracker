@@ -763,7 +763,7 @@ async def edit(ctx, game_name):
 
 
 @bot.command(name="tag", help="Adds an informative tag to a game. Example: !tag \"game name\" \"PvP only\".")
-async def tag(ctx, game_name, tag_text):
+async def add_tag(ctx, game_name, tag_text):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
@@ -776,6 +776,31 @@ async def tag(ctx, game_name, tag_text):
 
     # Update the tags and save the new game data
     game_data.tags.append(tag_text)
+    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+    save_dataset(dataset)
+
+    await update_overview(server_id)
+    await ctx.message.delete()
+
+
+@bot.command(name="remove_tag", help="Removes a tag from a game. Example: !remove_tag \"game name\" \"PvP only\".")
+async def remove_tag(ctx, game_name, tag_text):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        log(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    if tag_text not in game_data.tags:
+        await ctx.send(f"Game \"{game_data.name}\" does not have tag \"{tag_text}\".")
+        return
+
+    # Remove the tag and save the new game data
+    game_data.tags.remove(tag_text)
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
