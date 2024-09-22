@@ -21,6 +21,7 @@ DATASET_FILE = "dataset.json"
 
 EMBED_MAX_ITEMS = 25
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
+OVERVIEW_EMBED_COLOR = discord.Color.blue()
 
 EMOJIS = {
     "owned": ":video_game:",
@@ -313,7 +314,7 @@ def generate_overview_embed(server_id):
     # Can only show 25 games at a time
     sorted_games = sorted_games[:EMBED_MAX_ITEMS]
 
-    embed = discord.Embed(title=f"Games overview ({total_game_count} total)", color=discord.Color.blue())
+    embed = discord.Embed(title=f"Games overview ({total_game_count} total)", color=OVERVIEW_EMBED_COLOR)
     for game_data, score in sorted_games:
         embed_field_info = get_game_embed_field(game_data, server_dataset)
         embed.add_field(**embed_field_info)
@@ -523,9 +524,21 @@ async def on_reaction_add(reaction, user):
 
     message = reaction.message
     ctx = await bot.get_context(message)
+    server_id = str(ctx.guild.id)
     # Check if we need to delete the bot's message
     if reaction.emoji == "❌":
         await message.delete()
+
+        if len(message.embeds) == 0:
+            return
+        # Assume the message only has 1 embed, as multiple aren't possible
+        embed = message.embeds[0]
+        if embed.color == OVERVIEW_EMBED_COLOR:
+            # The overview was just deleted, so clear it from the dataset as well
+            dataset = read_dataset()
+            dataset[server_id]["overview_message_id"] = 0
+            dataset[server_id]["overview_channel_id"] = 0
+            save_dataset(dataset)
         return
 
     if len(message.embeds) == 0:
@@ -542,7 +555,6 @@ async def on_reaction_add(reaction, user):
 
         # Get the game's data
         dataset = read_dataset()
-        server_id = str(ctx.guild.id)
         server_dataset = dataset[server_id]
         game_data = filter_game_dataset(dataset, server_id, game_name)
         if game_data is None:
