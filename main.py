@@ -22,6 +22,7 @@ DATASET_FILE = "dataset.json"
 EMBED_MAX_ITEMS = 25
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 OVERVIEW_EMBED_COLOR = discord.Color.blue()
+LIST_EMBED_COLOR = discord.Color.blurple()
 
 EMOJIS = {
     "owned": ":video_game:",
@@ -764,7 +765,12 @@ async def list_games(ctx):
         games_list.append(f"{game_id} - [{game_name}]({game_link})")
 
     games_list_text = "\n".join(games_list)
-    await ctx.send(games_list_text)
+    list_embed = discord.Embed(
+        title="Games list",
+        description=games_list_text,
+        color=LIST_EMBED_COLOR
+    )
+    await ctx.send(embed=list_embed)
 
     await ctx.message.delete()
 
