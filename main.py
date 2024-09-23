@@ -756,15 +756,29 @@ async def list_games(ctx):
         await ctx.send("No data saved on this server yet.")
         return
     server_dataset = dataset[server_id]
+    member_count = server_dataset["member_count"]
 
     games_list = []
     for game_dict in server_dataset["games"].values():
         game_id = game_dict["id"]
         game_name = game_dict["name"]
         game_link = "https://store.steampowered.com/app/" + str(game_dict["steam_id"])
-        games_list.append(f"{game_id} - [{game_name}]({game_link})")
 
-    games_list_text = "\n".join(games_list)
+        # Count the score for this game
+        total_score = 0
+        votes = game_dict["votes"]
+        for voter, score in votes.items():
+            total_score += score
+        # Use a score of 5 for the non-voters
+        non_voters = member_count - len(votes)
+        total_score += non_voters * 5
+
+        games_list.append((f"{game_id} - [{game_name}]({game_link})", total_score))
+
+    # Sort the games list from highest score to lowest
+    games_list = sorted(games_list, key=lambda x: x[1], reverse=True)
+
+    games_list_text = "\n".join(game[0] for game in games_list)
     list_embed = discord.Embed(
         title="Games list",
         description=games_list_text,
