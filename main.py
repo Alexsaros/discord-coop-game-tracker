@@ -773,7 +773,14 @@ async def list_games(ctx):
         non_voters = member_count - len(votes)
         total_score += non_voters * 5
 
-        games_list.append((f"{game_id} - [{game_name}]({game_link})", total_score))
+        non_voters = [member.name for member in ctx.guild.members if not member.bot]
+        for name in votes.keys():
+            non_voters.remove(name)
+
+        non_voters_text = "".join(non_voters)
+        game_text = f"{game_id} - [{game_name}]({game_link}) {non_voters_text}"
+
+        games_list.append((game_text, total_score))
 
     # Sort the games list from highest score to lowest
     games_list = sorted(games_list, key=lambda x: x[1], reverse=True)
