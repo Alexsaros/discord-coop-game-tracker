@@ -743,6 +743,31 @@ async def overview(ctx):
     await ctx.message.delete()
 
 
+@bot.command(name="list", help="Displays a sorted list of all games (does not update). Example: !list.")
+async def list_games(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+
+    dataset = read_dataset()
+    # Try to narrow down the dataset to this server
+    if server_id not in dataset:
+        log(f"Could not find server {server_id} in the dataset.")
+        await ctx.send("No data saved on this server yet.")
+        return
+    server_dataset = dataset[server_id]
+
+    games_list = []
+    for game_dict in server_dataset["games"].values():
+        game_id = game_dict["id"]
+        game_name = game_dict["name"]
+        games_list.append(f"{game_id} - {game_name}")
+
+    games_list_text = "\n".join(games_list)
+    await ctx.send(games_list_text)
+
+    await ctx.message.delete()
+
+
 @bot.command(name="edit", help="Displays the given game as a message to be able edit it using its reactions. Example: !edit \"game name\".")
 async def edit(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
