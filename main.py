@@ -760,7 +760,8 @@ async def list_games(ctx):
     for game_dict in server_dataset["games"].values():
         game_id = game_dict["id"]
         game_name = game_dict["name"]
-        games_list.append(f"{game_id} - {game_name}")
+        game_link = "https://store.steampowered.com/app/" + str(game_dict["steam_id"])
+        games_list.append(f"{game_id} - [{game_name}]({game_link})")
 
     games_list_text = "\n".join(games_list)
     await ctx.send(games_list_text)
