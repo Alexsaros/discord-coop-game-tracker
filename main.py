@@ -20,6 +20,7 @@ STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 DATASET_FILE = "dataset.json"
 
 EMBED_MAX_ITEMS = 25
+EMBED_MAX_CHARACTERS = 6000
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 OVERVIEW_EMBED_COLOR = discord.Color.blue()
 LIST_EMBED_COLOR = discord.Color.blurple()
@@ -331,12 +332,59 @@ def generate_overview_embed(server_id):
 
         # Check if we have enough characters left in the embed to add the new entry
         total_characters += len(embed_field_info["name"]) + len(embed_field_info["value"])
-        if total_characters > 6000:
+        if total_characters > EMBED_MAX_CHARACTERS:
             return embed
 
         embed.add_field(**embed_field_info)
 
     return embed
+
+
+def generate_list_embed(server_id):
+    server_id = str(server_id)
+
+    dataset = read_dataset()
+    # Try to narrow down the dataset to this server
+    if server_id not in dataset:
+        log(f"Could not find server {server_id} in the dataset.")
+        return None
+
+    server_dataset = dataset[server_id]
+    sorted_games = sort_games_by_score(server_dataset)
+
+    guild = bot.get_guild(int(server_id))
+    if guild is None:
+        log(f"Error: could not find server with ID {server_id}.")
+        return None
+
+    games_list = []
+    for game_data, score in sorted_games:
+        # Get everyone who hasn't voted yet
+        non_voters = [member.name for member in guild.members if not member.bot]
+        for name in game_data.votes.keys():
+            try:
+                non_voters.remove(name)
+            except ValueError as e:
+                log(f"Error: failed to remove {name} from the members list: {e}")
+        non_voters_text = get_users_aliases_string(server_dataset, non_voters)
+
+        game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
+        game_text = f"{game_data.id} - [{game_data.name}]({game_link}) {non_voters_text}"
+        games_list.append(game_text)
+
+    title_text = "Games list (shows non-voters)"
+    games_list_text = "\n".join(games_list)
+    # Determine if we can show all games in the embed
+    chars_over_limit = len(title_text) + len(games_list_text) - EMBED_MAX_CHARACTERS
+    if chars_over_limit > 0:
+        games_list_text = games_list_text[:-chars_over_limit - 3] + "..."
+
+    list_embed = discord.Embed(
+        title=title_text,
+        description=games_list_text,
+        color=LIST_EMBED_COLOR
+    )
+    return list_embed
 
 
 async def update_overview(server_id):
@@ -765,50 +813,12 @@ async def list_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
-    dataset = read_dataset()
-    # Try to narrow down the dataset to this server
-    if server_id not in dataset:
-        log(f"Could not find server {server_id} in the dataset.")
-        await ctx.send("No data saved on this server yet.")
+    list_embed = generate_list_embed(server_id)
+    if list_embed is None:
+        await ctx.send("No games registered for this server yet.")
         return
-    server_dataset = dataset[server_id]
-    member_count = server_dataset["member_count"]
 
-    games_list = []
-    for game_dict in server_dataset["games"].values():
-        game_id = game_dict["id"]
-        game_name = game_dict["name"]
-        game_link = "https://store.steampowered.com/app/" + str(game_dict["steam_id"])
-
-        # Count the score for this game
-        total_score = 0
-        votes = game_dict["votes"]
-        for voter, score in votes.items():
-            total_score += score
-        # Use a score of 5 for the non-voters
-        non_voters = member_count - len(votes)
-        total_score += non_voters * 5
-
-        non_voters = [member.name for member in ctx.guild.members if not member.bot]
-        for name in votes.keys():
-            non_voters.remove(name)
-
-        non_voters_text = get_users_aliases_string(server_dataset, non_voters)
-        game_text = f"{game_id} - [{game_name}]({game_link}) {non_voters_text}"
-
-        games_list.append((game_text, total_score))
-
-    # Sort the games list from highest score to lowest
-    games_list = sorted(games_list, key=lambda x: x[1], reverse=True)
-
-    games_list_text = "\n".join(game[0] for game in games_list)
-    list_embed = discord.Embed(
-        title="Games list (shows non-voters)",
-        description=games_list_text,
-        color=LIST_EMBED_COLOR
-    )
     await ctx.send(embed=list_embed)
-
     await ctx.message.delete()
 
 
