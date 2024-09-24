@@ -695,7 +695,7 @@ async def remove_game(ctx, game_name):
 
 
 @bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. Default vote is 5.")
-async def rate_game(ctx, game_name, score=5):
+async def rate_game(ctx, game_name, score=5.0):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
