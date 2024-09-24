@@ -152,6 +152,8 @@ def create_new_server_entry():
         "games": {},
         "overview_message_id": 0,
         "overview_channel_id": 0,
+        "list_message_id": 0,
+        "list_channel_id": 0,
         "aliases": {},
     }
 
@@ -387,7 +389,11 @@ def generate_list_embed(server_id):
     return list_embed
 
 
-async def update_overview(server_id):
+async def get_live_message_object(server_id, message_type):
+    """
+    Gets the message object for one of the live updating messages.
+    Currently supports "overview" and "list" as message types.
+    """
     server_id = str(server_id)
 
     # Get the server dataset
@@ -395,37 +401,63 @@ async def update_overview(server_id):
     server_dataset = dataset.get(server_id)
     if server_dataset is None:
         log(f"Could not find server with ID {server_id} in dataset.")
-        return
+        return None
 
     # Get the Discord server object
     server_object = bot.get_guild(int(server_id))
     if server_object is None:
         log(f"Discord could not find server with ID {server_id}.")
-        return
+        return None
 
-    # Get the channel ID in which the overview message was sent
-    overview_channel_id = server_dataset.get("overview_channel_id")
-    if overview_channel_id in (None, 0):
-        # This server does not have an overview message
-        return
+    # Get the channel ID in which the message was sent
+    channel_id = server_dataset.get(f"{message_type}_channel_id")
+    if channel_id in (None, 0):
+        # This server does not have the specified message
+        return None
 
     # Get the Discord channel object
-    channel_object = server_object.get_channel(overview_channel_id)
+    channel_object = server_object.get_channel(channel_id)
     if channel_object is None:
-        log(f"Discord could not find channel with ID {overview_channel_id}.")
-        return
+        log(f"Discord could not find channel with ID {channel_id}.")
+        return None
 
-    # Get the Discord overview message object
-    overview_message_id = server_dataset.get("overview_message_id")
-    if overview_message_id in (None, 0):
-        log(f"Error: overview_message_id not found, but overview_channel_id is present for server {server_id}.")
-        return
+    # Get the Discord message object
+    message_id = server_dataset.get(f"{message_type}_message_id")
+    if message_id in (None, 0):
+        log(f"Error: {message_type}_message_id not found, but {message_type}_channel_id is present for server {server_id}.")
+        return None
 
-    overview_message = await channel_object.fetch_message(overview_message_id)
+    message = await channel_object.fetch_message(message_id)
+    return message
+
+
+async def update_overview(server_id):
+    server_id = str(server_id)
+
+    overview_message = await get_live_message_object(server_id, "overview")
+    if overview_message is None:
+        return
 
     updated_overview_embed = generate_overview_embed(server_id)
     if updated_overview_embed is not None:
         await overview_message.edit(embed=updated_overview_embed)
+
+
+async def update_list(server_id):
+    server_id = str(server_id)
+
+    list_message = await get_live_message_object(server_id, "list")
+    if list_message is None:
+        return
+
+    updated_list_embed = generate_list_embed(server_id)
+    if updated_list_embed is not None:
+        await list_message.edit(embed=updated_list_embed)
+
+
+async def update_live_messages(server_id):
+    await update_overview(server_id)
+    await update_list(server_id)
 
 
 async def update_all_overviews():
@@ -691,7 +723,7 @@ async def on_reaction_add(reaction, user):
             game_embed.add_field(**embed_field_info)
 
             await message.edit(embed=game_embed)
-            await update_overview(server_id)
+            await update_live_messages(server_id)
 
 
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
@@ -734,7 +766,7 @@ async def add_game(ctx, game_name):
 
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -754,7 +786,7 @@ async def remove_game(ctx, game_name):
     del dataset[server_id]["games"][str(game_data.id)]
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -782,7 +814,7 @@ async def rate_game(ctx, game_name, score=5.0):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -818,7 +850,14 @@ async def list_games(ctx):
         await ctx.send("No games registered for this server yet.")
         return
 
-    await ctx.send(embed=list_embed)
+    message = await ctx.send(embed=list_embed)
+
+    dataset = read_dataset()
+    # Store the new message ID
+    dataset[server_id]["list_message_id"] = message.id
+    dataset[server_id]["list_channel_id"] = ctx.channel.id
+    save_dataset(dataset)
+
     await ctx.message.delete()
 
 
@@ -868,7 +907,7 @@ async def add_tag(ctx, game_name, tag_text):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -893,7 +932,7 @@ async def remove_tag(ctx, game_name, tag_text):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -924,7 +963,7 @@ async def own(ctx, game_name, owns_game="yes"):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -952,7 +991,7 @@ async def players(ctx, game_name, player_count):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -981,7 +1020,7 @@ async def set_local(ctx, game_name, is_local="yes"):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -1010,7 +1049,7 @@ async def set_played(ctx, game_name, played_before="yes"):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -1045,7 +1084,7 @@ async def set_steam_id(ctx, game_name, steam_id):
     dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
@@ -1063,7 +1102,7 @@ async def set_alias(ctx, new_alias=None):
     server_dataset["aliases"] = aliases
     save_dataset(dataset)
 
-    await update_overview(server_id)
+    await update_live_messages(server_id)
     await ctx.message.delete()
 
 
