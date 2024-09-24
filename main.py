@@ -323,9 +323,17 @@ def generate_overview_embed(server_id):
     # Can only show 25 games at a time
     sorted_games = sorted_games[:EMBED_MAX_ITEMS]
 
-    embed = discord.Embed(title=f"Games overview ({total_game_count} total)", color=OVERVIEW_EMBED_COLOR)
+    title_text = f"Games overview ({total_game_count} total)"
+    total_characters = len(title_text)
+    embed = discord.Embed(title=title_text, color=OVERVIEW_EMBED_COLOR)
     for game_data, score in sorted_games:
         embed_field_info = get_game_embed_field(game_data, server_dataset)
+
+        # Check if we have enough characters left in the embed to add the new entry
+        total_characters += len(embed_field_info["name"]) + len(embed_field_info["value"])
+        if total_characters > 6000:
+            return embed
+
         embed.add_field(**embed_field_info)
 
     return embed
