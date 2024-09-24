@@ -215,6 +215,23 @@ def sort_games_by_score(server_dataset):
     return sorted(game_scores, key=lambda x: x[1], reverse=True)
 
 
+def get_users_aliases_string(server_dataset, users_list):
+    # Get each user's alias, falling back to their name if not set
+    users_text = ""
+    aliases = server_dataset.get("aliases", {})
+    user_names = []
+    user_aliases = []
+    for user in users_list:
+        user_alias = aliases.get(user)
+        if user_alias is not None:
+            user_aliases.append(user_alias)
+        else:
+            user_names.append(user)
+    users_text += " ".join(user_aliases)
+    users_text += ", ".join(user_names)
+    return users_text
+
+
 def get_game_embed_field(game_data, server_dataset):
     """
     Gets the details of the given game from the dataset to be displayed in an embed field.
@@ -248,18 +265,9 @@ def get_game_embed_field(game_data, server_dataset):
 
     if game_data.votes:
         description += "\n> Voted: "
-        # Display each voter's alias, falling back to their name if not set
-        aliases = server_dataset.get("aliases", {})
-        voter_names = []
-        voter_aliases = []
-        for voter in game_data.votes.keys():
-            voter_alias = aliases.get(voter)
-            if voter_alias is not None:
-                voter_aliases.append(voter_alias)
-            else:
-                voter_names.append(voter)
-        description += " ".join(voter_aliases)
-        description += ", ".join(voter_names)
+        voters = game_data.votes.keys()
+        voters_text = get_users_aliases_string(server_dataset, voters)
+        description += voters_text
 
     if game_data.player_count > 0:
         player_count_text = EMOJIS[f"{game_data.player_count}players"]
@@ -777,7 +785,7 @@ async def list_games(ctx):
         for name in votes.keys():
             non_voters.remove(name)
 
-        non_voters_text = "".join(non_voters)
+        non_voters_text = get_users_aliases_string(server_dataset, non_voters)
         game_text = f"{game_id} - [{game_name}]({game_link}) {non_voters_text}"
 
         games_list.append((game_text, total_score))
@@ -787,7 +795,7 @@ async def list_games(ctx):
 
     games_list_text = "\n".join(game[0] for game in games_list)
     list_embed = discord.Embed(
-        title="Games list",
+        title="Games list (shows non-voters)",
         description=games_list_text,
         color=LIST_EMBED_COLOR
     )
