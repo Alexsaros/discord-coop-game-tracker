@@ -726,6 +726,17 @@ async def on_reaction_add(reaction, user):
             await update_live_messages(server_id)
 
 
+@bot.command(name="update_prices", help="Retrieves the latest prices from Steam. Example: !update_prices.")
+async def update_prices(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+
+    await update_dataset_steam_prices()
+
+    await update_live_messages(server_id)
+    await ctx.message.delete()
+
+
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
 async def add_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
