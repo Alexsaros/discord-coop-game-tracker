@@ -154,7 +154,10 @@ def create_new_server_entry():
         "overview_channel_id": 0,
         "list_message_id": 0,
         "list_channel_id": 0,
+        "hall_of_game_message_id": 0,
+        "hall_of_game_channel_id": 0,
         "aliases": {},
+        "finished_games": {},
     }
 
 
@@ -389,6 +392,48 @@ def generate_list_embed(server_id):
     return list_embed
 
 
+def generate_hog_embed(server_id):
+    server_id = str(server_id)
+
+    dataset = read_dataset()
+    # Try to narrow down the dataset to this server
+    if server_id not in dataset:
+        log(f"Could not find server {server_id} in the dataset.")
+        return None
+
+    server_dataset = dataset[server_id]
+    game_dataset = server_dataset.get("finished_games", {})
+    game_data_list = [GameData(json_data=game_data_dict) for game_data_dict in game_dataset.values()]
+    if len(game_data_list) == 0:
+        log("No completed games found.")
+        return None
+
+    guild = bot.get_guild(int(server_id))
+    if guild is None:
+        log(f"Error: could not find server with ID {server_id}.")
+        return None
+
+    games_list = []
+    for game_data in game_data_list:
+        game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
+        game_text = f"{game_data.id} - [{game_data.name}]({game_link})"
+        games_list.append(game_text)
+
+    title_text = "Hall of Game"
+    games_list_text = "\n".join(games_list)
+    # Determine if we can show all games in the embed
+    chars_over_limit = len(title_text) + len(games_list_text) - EMBED_MAX_CHARACTERS
+    if chars_over_limit > 0:
+        games_list_text = games_list_text[:-chars_over_limit - 3] + "..."
+
+    list_embed = discord.Embed(
+        title=title_text,
+        description=games_list_text,
+        color=LIST_EMBED_COLOR
+    )
+    return list_embed
+
+
 async def get_live_message_object(server_id, message_type):
     """
     Gets the message object for one of the live updating messages.
@@ -455,9 +500,22 @@ async def update_list(server_id):
         await list_message.edit(embed=updated_list_embed)
 
 
+async def update_hall_of_game(server_id):
+    server_id = str(server_id)
+
+    hog_message = await get_live_message_object(server_id, "hall_of_game")
+    if hog_message is None:
+        return
+
+    updated_hog_embed = generate_hog_embed(server_id)
+    if updated_hog_embed is not None:
+        await hog_message.edit(embed=updated_hog_embed)
+
+
 async def update_live_messages(server_id):
     await update_overview(server_id)
     await update_list(server_id)
+    await update_hall_of_game(server_id)
 
 
 async def update_all_overviews():
@@ -798,6 +856,51 @@ async def remove_game(ctx, game_name):
     save_dataset(dataset)
 
     await update_live_messages(server_id)
+    await ctx.message.delete()
+
+
+@bot.command(name="finish", help="Marks a game as finished, moving it to the completed games list. Example: !finish \"game name\".")
+async def finish_game(ctx, game_name):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        log(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game.")
+        return
+
+    # Move the game to finished_games and save the dataset again
+    finished_games = dataset[server_id].get("finished_games", {})
+    finished_games[str(game_data.id)] = game_data.to_json()
+    dataset[server_id]["finished_games"] = finished_games
+    del dataset[server_id]["games"][str(game_data.id)]
+    save_dataset(dataset)
+
+    await update_live_messages(server_id)
+    await ctx.message.delete()
+
+
+@bot.command(name="hog", help=":boar:")
+async def hall_of_game(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+
+    hog_embed = generate_hog_embed(ctx.guild.id)
+    if hog_embed is None:
+        await ctx.send("Nothing to show (yet).")
+        return
+
+    message = await ctx.send(embed=hog_embed)
+
+    dataset = read_dataset()
+
+    # Store the new message ID
+    dataset[server_id]["hall_of_game_message_id"] = message.id
+    dataset[server_id]["hall_of_game_channel_id"] = ctx.channel.id
+    save_dataset(dataset)
+
     await ctx.message.delete()
 
 
