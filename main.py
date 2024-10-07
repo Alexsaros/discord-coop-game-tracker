@@ -1228,6 +1228,10 @@ async def kick(ctx, member_name):
         await ctx.send("Ouch! Stop kicking me! :cry:")
         return
 
+    if member_name == str(ctx.author):
+        await ctx.send("Stop hitting yourself.")
+        return
+
     if member_name in ["alexsaro"]:
         await ctx.send("Don't you try to kick my creator!")
         return
