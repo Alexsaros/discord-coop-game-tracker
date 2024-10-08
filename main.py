@@ -1271,7 +1271,21 @@ async def view(ctx):
     ]
     message = random.choice(view_messages)
     await ctx.send(message)
-    return
+
+
+@bot.command(name="hentie", help="Sends random hentie image.")
+async def hentie(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+
+    hentie_image_links = [
+        "https://i.redd.it/u30f7kflnxb11.jpg",
+        "https://pbs.twimg.com/media/FUeFpJDUAAA7Iyo?format=jpg&name=4096x4096",
+        "https://ih1.redbubble.net/image.1568819551.7909/bg,f8f8f8-flat,750x,075,f-pad,750x1000,f8f8f8.jpg",
+        "https://static.wikia.nocookie.net/walkingdead/images/0/00/Hen_in_a_tie.jpg",
+        "http://farm4.staticflickr.com/3262/2610575538_b3e16d48c8_z.jpg",
+    ]
+    message = random.choice(hentie_image_links)
+    await ctx.send(message)
 
 
 @bot.event
