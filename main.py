@@ -1248,6 +1248,32 @@ async def kick(ctx, member_name):
             return
 
 
+@bot.command(name="view")
+async def view(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+    username = str(ctx.author)
+
+    if username == "jo.bear":
+        view_messages_jo = [
+            "Really, Jo? Again?",
+            "C'mon, Jo! It's easy! It's ***!overview*** for a detailed overview of the top games, and ***!list*** for a list of all games!",
+            "Are you typing the wrong command on purpose, Jo?",
+            "What?! What is it that you want to view, Jo?! ***TELL ME!***",
+        ]
+        message = random.choice(view_messages_jo)
+        await ctx.send(message)
+        return
+
+    view_messages = [
+        ":unamused:",
+        "Try !overview or !list instead.",
+        "Stop it.",
+    ]
+    message = random.choice(view_messages)
+    await ctx.send(message)
+    return
+
+
 @bot.event
 async def on_command_error(ctx, error):
     print("\nEncountered command error:")
