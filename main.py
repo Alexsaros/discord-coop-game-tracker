@@ -675,9 +675,20 @@ async def on_reaction_add(reaction, user):
     # Ignore the bot's own reactions
     if user == bot.user:
         return
-    log(f"{user} added reaction: {reaction.emoji}")
-
     message = reaction.message
+
+    # If the reaction is added to a non-bot message, ignore it
+    if message.author.name != bot.user.name:
+        # Unless I remove someone's message
+        if user.name == "alexsaro" and reaction.emoji == "❌":
+            await message.delete()
+            return
+        # Or someone tried to remove my message
+        if message.author.name == "alexsaro" and reaction.emoji == "❌":
+            message.add_reaction("😏")
+        return
+    log(f"{user} added reaction {reaction.emoji} to bot's message")
+
     ctx = await bot.get_context(message)
     server_id = str(ctx.guild.id)
     # Check if we need to delete the bot's message
