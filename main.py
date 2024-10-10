@@ -1231,6 +1231,27 @@ async def set_alias(ctx, new_alias=None):
     await ctx.message.delete()
 
 
+@bot.command(name="rename", help="Change the name of a game. Example: !rename \"game name\" \"new game name\".")
+async def rename_game(ctx, game_name, new_game_name):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name)
+    if game_data is None:
+        log(f"Could not find game: {str(game_data)}")
+        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
+        return
+
+    # Update the name and save the new game data
+    game_data.name = new_game_name
+    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
+    save_dataset(dataset)
+
+    await update_live_messages(server_id)
+    await ctx.message.delete()
+
+
 @bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
 async def kick(ctx, member_name):
     log(f"{ctx.author}: {ctx.message.content}")
