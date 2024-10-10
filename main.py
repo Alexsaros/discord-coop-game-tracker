@@ -24,6 +24,7 @@ EMBED_MAX_CHARACTERS = 6000
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 OVERVIEW_EMBED_COLOR = discord.Color.blue()
 LIST_EMBED_COLOR = discord.Color.blurple()
+AFFINITY_EMBED_COLOR = discord.Color.purple()
 
 EMOJIS = {
     "owned": ":video_game:",
@@ -1249,6 +1250,69 @@ async def rename_game(ctx, game_name, new_game_name):
     save_dataset(dataset)
 
     await update_live_messages(server_id)
+    await ctx.message.delete()
+
+
+@bot.command(name="affinity", help="Shows how similarly you vote to other people. Example: !affinity.")
+async def rename_game(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+    username = str(ctx.author)
+
+    dataset = read_dataset()
+
+    # Narrow down the dataset to a specific server
+    if server_id not in dataset:
+        await ctx.send("No games registered for this server yet.")
+        return
+    game_dataset = dataset[server_id]["games"]
+
+    similarity_scores = {}
+    for game_json in game_dataset.values():
+        votes = game_json.get("votes", {})
+        # Skip this game if the user hasn't voted on it
+        if username not in votes:
+            continue
+
+        base_vote = votes[username]
+        # Check the votes for this game
+        for user, vote in votes.items():
+            if user == username:
+                continue
+
+            # If this is the first time we see this user, add them to the scores dict
+            if user not in similarity_scores:
+                similarity_scores[user] = {"error_sum": 0, "count": 0}
+
+            similarity_scores[user]["error_sum"] += abs(base_vote - vote)
+            similarity_scores[user]["count"] += 1
+
+    similarity_percentages = {}
+    for user, stats in similarity_scores.items():
+        if stats["count"] > 0:
+            # Calculate the Mean Absolute Error
+            mae = stats["error_sum"] / stats["count"]
+            # Convert it to a percentage
+            similarity = (1 - (mae / 10)) * 100
+            similarity_percentages[user] = round(similarity, 2)
+
+    if len(similarity_percentages) == 0:
+        affinity_text = "No people have voted on the same games."
+    else:
+        entries = []
+        for user, affinity in similarity_percentages.items():
+            entries.append(f"{user}: {affinity}%")
+        affinity_text = "\n".join(entries)
+
+    # Get info on the game and display it in an embed
+    title = f"{username}'s affinity with others"
+    affinity_embed = discord.Embed(
+        title=title,
+        description=affinity_text,
+        color=AFFINITY_EMBED_COLOR
+    )
+
+    await ctx.send(embed=affinity_embed)
     await ctx.message.delete()
 
 
