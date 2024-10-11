@@ -1287,20 +1287,23 @@ async def rename_game(ctx):
             similarity_scores[user]["error_sum"] += abs(base_vote - vote)
             similarity_scores[user]["count"] += 1
 
-    similarity_percentages = {}
+    similarity_percentages = []
     for user, stats in similarity_scores.items():
         if stats["count"] > 0:
             # Calculate the Mean Absolute Error
             mae = stats["error_sum"] / stats["count"]
             # Convert it to a percentage
             similarity = (1 - (mae / 10)) * 100
-            similarity_percentages[user] = round(similarity, 2)
+            similarity_percentages.append((user, round(similarity, 2)))
+
+    # Sort it so the highest affinity shows up first
+    similarity_percentages = sorted(similarity_percentages, key=lambda x: x[1], reverse=True)
 
     if len(similarity_percentages) == 0:
         affinity_text = "No people have voted on the same games."
     else:
         entries = []
-        for user, affinity in similarity_percentages.items():
+        for user, affinity in similarity_percentages:
             entries.append(f"{user}: {affinity}%")
         affinity_text = "\n".join(entries)
 
