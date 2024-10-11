@@ -58,6 +58,7 @@ class CustomHelpCommand(commands.DefaultHelpCommand):
             spooky_message = random.choice(spooky_messages)
             channel = self.get_destination()
             message = await channel.send(spooky_message)
+            log(f"Sent spooky message: {spooky_message}")
             time.sleep(2.5)
             await message.delete()
 
