@@ -231,17 +231,26 @@ def add_game_to_dataset(dataset: dict, server_id, game_data: GameData, set_game_
     return dataset
 
 
-def sort_games_by_score(server_dataset):
+def sort_games_by_score(server_dataset, finished_games=False):
     member_count = server_dataset["member_count"]
-    game_dataset = server_dataset["games"]
+    if finished_games:
+        game_dataset = server_dataset.get("finished_games", {})
+    else:
+        game_dataset = server_dataset.get("games", {})
     game_scores = []
 
     for game_data_dict in game_dataset.values():
-        game_data = GameData(json_data=game_data_dict)
+        if finished_games:
+            game_data = FinishedGameData(json_data=game_data_dict)
+        else:
+            game_data = GameData(json_data=game_data_dict)
 
         # Count the score for this game
         total_score = 0
-        votes = game_data.votes
+        if finished_games:
+            votes = game_data.enjoyment_scores
+        else:
+            votes = game_data.votes
         for voter, score in votes.items():
             total_score += score
         # Use a score of 5 for the non-voters
@@ -434,9 +443,8 @@ def generate_hog_embed(server_id):
         return None
 
     server_dataset = dataset[server_id]
-    game_dataset = server_dataset.get("finished_games", {})
-    game_data_list = [FinishedGameData(json_data=game_data_dict) for game_data_dict in game_dataset.values()]
-    if len(game_data_list) == 0:
+    sorted_games = sort_games_by_score(server_dataset, finished_games=True)
+    if len(sorted_games) == 0:
         log("No completed games found.")
         return None
 
@@ -446,7 +454,7 @@ def generate_hog_embed(server_id):
         return None
 
     games_list = []
-    for game_data in game_data_list:
+    for game_data, score in sorted_games:
         game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
         game_text = f"{game_data.id} - [{game_data.name}]({game_link})"
         games_list.append(game_text)
@@ -952,7 +960,7 @@ async def enjoyed(ctx, game_name, score=5.0):
     dataset[server_id]["finished_games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
-    await update_live_messages(server_id)
+    await update_hall_of_game(server_id)
     await ctx.message.delete()
 
 
