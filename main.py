@@ -184,7 +184,7 @@ def create_new_server_entry():
     }
 
 
-def filter_game_dataset(dataset: dict, server_id, game_name):
+def filter_game_dataset(dataset: dict, server_id, game_name, finished=False):
     """
     Checks if the given dataset contains the given game, and returns the game's data as a GameData object.
     Returns None if the game was not found.
@@ -193,18 +193,27 @@ def filter_game_dataset(dataset: dict, server_id, game_name):
     server_id = str(server_id)
     if server_id not in dataset:
         dataset[server_id] = create_new_server_entry()
-    game_dataset = dataset[server_id]["games"]
+    if finished:
+        game_dataset = dataset[server_id]["finished_games"]
+    else:
+        game_dataset = dataset[server_id]["games"]
 
     try:
         # Check if the game was passed as ID
         game_id = str(int(game_name))
         if game_id in game_dataset:
             game_data_dict = game_dataset[game_id]
-            return GameData(json_data=game_data_dict)
+            if finished:
+                return FinishedGameData(json_data=game_data_dict)
+            else:
+                return GameData(json_data=game_data_dict)
     except ValueError:
         for game_data_dict in game_dataset.values():
             if game_data_dict["name"] == game_name:
-                return GameData(json_data=game_data_dict)
+                if finished:
+                    return FinishedGameData(json_data=game_data_dict)
+                else:
+                    return GameData(json_data=game_data_dict)
     return None
 
 
@@ -426,7 +435,7 @@ def generate_hog_embed(server_id):
 
     server_dataset = dataset[server_id]
     game_dataset = server_dataset.get("finished_games", {})
-    game_data_list = [GameData(json_data=game_data_dict) for game_data_dict in game_dataset.values()]
+    game_data_list = [FinishedGameData(json_data=game_data_dict) for game_data_dict in game_dataset.values()]
     if len(game_data_list) == 0:
         log("No completed games found.")
         return None
@@ -913,6 +922,34 @@ async def finish_game(ctx, game_name):
 
     # Remove the game from the regular list and save the dataset again
     del dataset[server_id]["games"][str(game_data.id)]
+    save_dataset(dataset)
+
+    await update_live_messages(server_id)
+    await ctx.message.delete()
+
+
+@bot.command(name="enjoyed", help="Rate how much you enjoyed a game, between 0-10. Example: !enjoyed \"game name\" 7.5. Default rating is 5.")
+async def enjoyed(ctx, game_name, score=5.0):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+
+    try:
+        score = float(score)
+        assert 0 <= score <= 10
+    except (ValueError, AssertionError):
+        await ctx.send("Rating must be a number between 0 and 10.")
+        return
+
+    dataset = read_dataset()
+    game_data = filter_game_dataset(dataset, server_id, game_name, finished=True)
+    if game_data is None:
+        log(f"Could not find finished game: {str(game_data)}")
+        await ctx.send("Could not find finished game. Please use: !finish \"game name\", to mark a game as finished.")
+        return
+
+    # Update the vote and save the new game data
+    game_data.enjoyment_scores[str(ctx.author)] = score
+    dataset[server_id]["finished_games"][str(game_data.id)] = game_data.to_json()
     save_dataset(dataset)
 
     await update_live_messages(server_id)
