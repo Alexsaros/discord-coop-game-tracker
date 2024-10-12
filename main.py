@@ -131,6 +131,27 @@ class GameData:
         return str(self.to_json())
 
 
+class FinishedGameData(GameData):
+
+    finished_timestamp = 0
+    enjoyment_scores = None
+
+    def __init__(self, json_data=None):
+        self.enjoyment_scores = {}
+        super().__init__(json_data=json_data)
+
+    def load_json(self, json_data):
+        super().load_json(json_data)
+        self.finished_timestamp = json_data.get("finished_timestamp", 0)
+        self.enjoyment_scores = json_data.get("enjoyment_scores", {})
+
+    def to_json(self):
+        json_data = super().to_json()
+        json_data["finished_timestamp"] = self.finished_timestamp
+        json_data["enjoyment_scores"] = self.enjoyment_scores
+        return json_data
+
+
 def read_dataset():
     if not os.path.exists(DATASET_FILE):
         log(f"{DATASET_FILE} does not exist. Creating it...")
@@ -884,10 +905,13 @@ async def finish_game(ctx, game_name):
         await ctx.send("Could not find game.")
         return
 
-    # Move the game to finished_games and save the dataset again
+    # Create a FinishedGameData object for this game and save it
+    finished_game = FinishedGameData(json_data=game_data.to_json())
     finished_games = dataset[server_id].get("finished_games", {})
-    finished_games[str(game_data.id)] = game_data.to_json()
+    finished_games[str(game_data.id)] = finished_game.to_json()
     dataset[server_id]["finished_games"] = finished_games
+
+    # Remove the game from the regular list and save the dataset again
     del dataset[server_id]["games"][str(game_data.id)]
     save_dataset(dataset)
 
