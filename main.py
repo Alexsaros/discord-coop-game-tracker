@@ -49,37 +49,37 @@ TAROT_CARDS = {
     },
     "1": {
         "number": 1,
-        "name": "I The Magician",
+        "name": "The Magician",
         "meaning_upright": "It’s time for action - your travel plans, business and creative projects are blessed. You have the energy and wisdom you need to make it happen now. Others see your talent.",
         "meaning_reversed": "False appearances. A scheme or project you’re involved in doesn’t ring true. A further meaning is a creative block, and travel plans being put on hold.",
     },
     "2": {
         "number": 2,
-        "name": "II The High Priestess",
+        "name": "The High Priestess",
         "meaning_upright": "Your dreams and your intuition provide the answers you need. This is a psychic card, revealing that truth comes from unconventional sources. You may find a wonderful course, guide or advisor at this time.",
         "meaning_reversed": "You may be let down by an authority figure pro other person you trust; there’s a side to this situation that has been covered up - until now.",
     },
     "3": {
         "number": 3,
-        "name": "III The Empress",
+        "name": "The Empress",
         "meaning_upright": "Enjoy this productive, joyful time when you’ll have the energy to develop your projects, decorate your home, spend time with children, and give yourself a little luxury. Money flows and love grows under The Empress’s influence.",
         "meaning_reversed": "Household problems, lack of time and money, and even a difficult older woman are the meanings of the Empress reversed. Hold on - things will improve if you keep calm.",
     },
     "4": {
         "number": 4,
-        "name": "IV The Emperor",
+        "name": "The Emperor",
         "meaning_upright": "Help, protection and the influence of a powerful individual for whom action speaks louder than words. Tradition is the watchword of The Emperor, so this is a time to play by the rules rather than flout convention.",
         "meaning_reversed": "Disorder; a controlling boss or older relative, poor leadership at work, bullying and upset in relationships. This person may oppose you, but view this as an opportunity to assert your own values.",
     },
     "5": {
         "number": 5,
-        "name": "V The Hierophant",
+        "name": "The Hierophant",
         "meaning_upright": "The Hierophant stands for unity. In your everyday life, he shows you committing to your goals so they become reality; you take action rather than daydream. He’s also a symbol of education, asking you to know yourself more deeply and to be open to new wisdom.",
         "meaning_reversed": "Perfectionism, self-criticism, and chaos in communities and at home. Projects become blocked due to miscommunication. If possible, step back and redefine what you alone want, regardless of others.",
     },
     "6": {
         "number": 6,
-        "name": "VI The Lovers",
+        "name": "The Lovers",
         "meaning_upright": "There’s amazing potential for lasting love, or reward, but you’ll need to make a mature choice that takes into account long-term rather than short-term benefits. Consider your future rather than old attitudes that don’t serve you.",
         "meaning_reversed": "Choosing the easier option under pressure and in relationships, feeling betrayed or let down by a partner. Don’t sacrifice your needs to keep the peace; put yourself first, even if that means walking away.",
     },
@@ -1543,11 +1543,9 @@ async def tarot(ctx):
     image_path = os.path.join("tarot-cards", image_filename)
     file = discord.File(image_path, filename=image_filename)
 
-    # Determine if the card is reversed
-    interpretation = card_dict["meaning_reversed"] if is_reversed else card_dict["meaning_upright"]
-
     # Create the embed
     title = f"{username} pulled tarot card: {card_name} {card_position}"
+    interpretation = card_dict["meaning_reversed"] if is_reversed else card_dict["meaning_upright"]
     tarot_embed = discord.Embed(
         title=title,
         description=interpretation,
