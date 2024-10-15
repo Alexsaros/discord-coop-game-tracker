@@ -550,8 +550,11 @@ def generate_list_embed(server_id):
                 log(f"Error: failed to remove {name} from the members list: {e}")
         non_voters_text = get_users_aliases_string(server_dataset, non_voters)
 
-        game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
-        game_text = f"{game_data.id} - [{game_data.name}]({game_link}) {non_voters_text}"
+        if game_data.steam_id == 0:
+            game_text = f"{game_data.id} - {game_data.name} {non_voters_text}"
+        else:
+            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
+            game_text = f"{game_data.id} - [{game_data.name}]({game_link}) {non_voters_text}"
         games_list.append(game_text)
 
     title_text = "Games list (shows non-voters)"
@@ -591,8 +594,11 @@ def generate_hog_embed(server_id):
 
     games_list = []
     for game_data, score in sorted_games:
-        game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
-        game_text = f"{game_data.id} - [{game_data.name}]({game_link})"
+        if game_data.steam_id == 0:
+            game_text = f"{game_data.id} - {game_data.name}"
+        else:
+            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
+            game_text = f"{game_data.id} - [{game_data.name}]({game_link})"
         games_list.append(game_text)
 
     title_text = "Hall of Game"
