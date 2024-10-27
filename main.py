@@ -8,6 +8,7 @@ import requests
 import datetime
 from discord.ext import commands
 from dotenv import load_dotenv
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import random
 
 
@@ -780,6 +781,7 @@ async def update_dataset_steam_prices():
                 game_dict["price_original"] = steam_game_info["price_original"]
 
     save_dataset(dataset)
+    log("Retrieved Steam prices")
 
     await update_all_overviews()
 
@@ -849,8 +851,14 @@ def search_steam_for_game(game_name):
 async def on_ready():
     log(f"\n\n\n{datetime.datetime.now()}")
     log(f"{bot.user} has connected to Discord!")
+
+    # Checks Steam and displays the updated prices
     await update_dataset_steam_prices()
-    log("Finished updating Steam prices")
+
+    # Start a scheduler to update the prices at 0 and 12 o'clock each day
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(update_dataset_steam_prices, "cron", hour="0,12")
+    scheduler.start()
 
 
 @bot.event
