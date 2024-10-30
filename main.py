@@ -417,13 +417,8 @@ def get_users_aliases_string(server_dataset, users_list):
     return users_text
 
 
-def get_game_embed_field(game_data, server_dataset):
-    """
-    Gets the details of the given game from the dataset to be displayed in an embed field.
-    Returns a dictionary with keys "name", "value", and "inline", as expected by Discord's embed field.
-    """
-    description = ""
-
+def generate_price_text(game_data):
+    price_text = ""
     if game_data.price_original >= 0:
         price_original = game_data.price_original
         price_current = game_data.price_current
@@ -441,6 +436,18 @@ def get_game_embed_field(game_data, server_dataset):
                     discount_percent = int(((price_original - price_current) / price_original) * 100)
                     price_text = f"~~{price_text}~~ **€{price_current:.2f}** (-{discount_percent}%)"
 
+    return price_text
+
+
+def get_game_embed_field(game_data, server_dataset):
+    """
+    Gets the details of the given game from the dataset to be displayed in an embed field.
+    Returns a dictionary with keys "name", "value", and "inline", as expected by Discord's embed field.
+    """
+    description = ""
+
+    price_text = generate_price_text(game_data)
+    if price_text != "":
         # If we have the game ID, add a hyperlink on the game's price
         if game_data.steam_id:
             link = f"https://store.steampowered.com/app/{game_data.steam_id}"
