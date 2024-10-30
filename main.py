@@ -6,6 +6,7 @@ import json
 import time
 import requests
 import datetime
+from io import BytesIO
 from discord.ext import commands
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -448,7 +449,7 @@ def get_game_embed_field(game_data, server_dataset):
 
     price_text = generate_price_text(game_data)
     if price_text != "":
-        # If we have the game ID, add a hyperlink on the game's price
+        # If we have the Steam game ID, add a hyperlink on the game's price
         if game_data.steam_id:
             link = f"https://store.steampowered.com/app/{game_data.steam_id}"
             price_text = f"[{price_text}]({link})"
@@ -715,36 +716,44 @@ async def update_all_overviews():
         await update_overview(server_id)
 
 
-def get_game_price(game_id):
-    """
-    Uses the Steam API to search for info on the given game ID.
-    Returns a dictionary containing the "id", "price_current" and "price_original" keys.
-    Returns None if the game wasn't found.
-    """
-    # Check if an actual game ID was given
-    if game_id == 0:
+def get_steam_game_data(steam_game_id):
+    # Check if an actual Steam game ID was given
+    if steam_game_id == 0:
         return None
-    game_id = str(game_id)
+    steam_game_id = str(steam_game_id)
 
     # API URL for getting info on a specific Steam game
-    url = f"https://store.steampowered.com/api/appdetails?appids={game_id}&cc=eu"
+    url = f"https://store.steampowered.com/api/appdetails?appids={steam_game_id}&cc=eu"
 
     params = {
-        "appids": game_id,
+        "appids": steam_game_id,
         "cc": "nl",     # Country used for pricing/currency
         "l": "english",
     }
     response = requests.get(url, params=params)
 
     if response.status_code >= 300:
-        log(f"Failed to get game with ID \"{game_id}\" using Steam API: {response.status_code}")
+        log(f"Failed to get game with ID \"{steam_game_id}\" using Steam API: {response.status_code}")
         log(response.json())
         return None
 
     response_json = response.json()
-    steam_game_data = response_json.get(game_id, {}).get("data", {})
+    steam_game_data = response_json.get(steam_game_id, {}).get("data", {})
     if not steam_game_data:
-        log(f"Warning: missing Steam info for game ID {game_id}.")
+        log(f"Warning: missing Steam info for Steam game ID {steam_game_id}: {response_json}")
+        return None
+
+    return steam_game_data
+
+
+def get_game_price(steam_game_id):
+    """
+    Uses the Steam API to search for info on the given Steam game ID.
+    Returns a dictionary containing the "id", "price_current" and "price_original" keys.
+    Returns None if the game wasn't found.
+    """
+    steam_game_data = get_steam_game_data(steam_game_id)
+    if steam_game_data is None:
         return None
 
     game_name = steam_game_data["name"]
@@ -774,6 +783,32 @@ def get_game_price(game_id):
     }
 
     return steam_info
+
+
+def get_steam_game_banner(steam_game_id):
+    """
+    Uses the Steam API to download the banner of the given Steam game ID, and upload it to Discord.
+    Returns a Discord File object.
+    Returns None if the game wasn't found.
+    """
+    steam_game_data = get_steam_game_data(steam_game_id)
+    if steam_game_data is None:
+        return None
+    game_name = steam_game_data.get("name", "")
+
+    # Fetch the banner
+    banner_url = steam_game_data.get("header_image")
+    if banner_url is None:
+        return None
+    response = requests.get(banner_url)
+    if response.status_code >= 300:
+        log(f"Failed to get banner for Steam game ID \"{steam_game_id}\" using Steam API: {response.status_code}")
+        log(response.json())
+        return None
+
+    # Convert the banner to a Discord File and return it
+    image_bytes = BytesIO(response.content)
+    return discord.File(image_bytes, f"{game_name} banner.jpg")
 
 
 async def update_dataset_steam_prices():
@@ -1089,6 +1124,22 @@ async def finish_game(ctx, game_name):
     # Remove the game from the regular list and save the dataset again
     del dataset[server_id]["games"][str(game_data.id)]
     save_dataset(dataset)
+
+    # Get the hall of game channel, or the current channel if it does not yet exist
+    server_dataset = dataset.get(server_id)
+    channel_id = server_dataset.get("hall_of_game_channel_id", ctx.channel.id)
+    channel_object = bot.get_channel(channel_id)
+    if channel_object is None:
+        log(f"Discord could not find channel with ID {channel_id}.")
+    else:
+        # Create a thread for the game and its screenshots in the hall of game channel
+        banner_file = get_steam_game_banner(game_data.steam_id)
+        if banner_file is None:
+            banner_message = await channel_object.send(game_data.name)
+        else:
+            banner_message = await channel_object.send(game_data.name, file=banner_file)
+        await banner_message.create_thread(name=game_data.name)
+        await channel_object.create_thread(name=f"{game_data.name} screenshots", type=discord.ChannelType.public_thread)
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1559,7 +1610,7 @@ async def tarot(ctx):
     is_reversed = random.choice([True, False])
     card_position = "(Reversed)" if is_reversed else "(Upright)"
 
-    # Get the image and upload it to Discord
+    # Get the image and create a Discord File object
     image_filename = f"{card_key}-{card_name.lower().replace(' ', '-')}"
     image_filename += "-reversed.jpg" if is_reversed else ".jpg"
     image_path = os.path.join("tarot-cards", image_filename)
