@@ -21,7 +21,7 @@ STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 
 DATASET_FILE = "dataset.json"
 
-EMBED_MAX_ITEMS = 25
+EMBED_MAX_FIELDS = 25
 EMBED_MAX_CHARACTERS = 6000
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 OVERVIEW_EMBED_COLOR = discord.Color.blue()
@@ -501,7 +501,35 @@ def get_game_embed_field(game_data, server_dataset):
     return embed_field_info
 
 
-def generate_overview_embed(server_id):
+def paginate_embed(embed: discord.Embed):
+    embeds = []
+    new_embed = discord.Embed(title=embed.title, color=embed.color)
+    embeds.append(new_embed)
+    title_length = len(embed.title) + 15  # Add 15 extra characters as wiggle room, to support page numbers into the triple digits
+    current_embed_length = title_length
+
+    for field in embed.fields:
+        field_length = len(field.name) + len(field.value)
+        # Check if there's enough space left for this field in the embed, if not, create a new embed
+        if ((current_embed_length + field_length) > EMBED_MAX_CHARACTERS) or \
+                (len(new_embed.fields) >= EMBED_MAX_FIELDS):
+            new_embed = discord.Embed(title=embed.title, color=embed.color)
+            embeds.append(new_embed)
+            current_embed_length = title_length
+
+        # Add the field to the new embed
+        current_embed_length += field_length
+        new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+
+    # Update each embed's title to indicate their page number
+    if len(embeds) > 1:
+        for i, new_embed in enumerate(embeds, 1):
+            new_embed.title += f" (page {i}/{len(embeds)})"
+
+    return embeds
+
+
+def generate_overview_embeds(server_id):
     server_id = str(server_id)
 
     dataset = read_dataset()
@@ -513,23 +541,15 @@ def generate_overview_embed(server_id):
 
     sorted_games = sort_games_by_score(server_dataset)
     total_game_count = len(sorted_games)
-    # Can only show 25 games at a time
-    sorted_games = sorted_games[:EMBED_MAX_ITEMS]
 
     title_text = f"Games overview ({total_game_count} total)"
-    total_characters = len(title_text)
     embed = discord.Embed(title=title_text, color=OVERVIEW_EMBED_COLOR)
     for game_data, score in sorted_games:
         embed_field_info = get_game_embed_field(game_data, server_dataset)
-
-        # Check if we have enough characters left in the embed to add the new entry
-        total_characters += len(embed_field_info["name"]) + len(embed_field_info["value"])
-        if total_characters > EMBED_MAX_CHARACTERS:
-            return embed
-
         embed.add_field(**embed_field_info)
 
-    return embed
+    embeds = paginate_embed(embed)
+    return embeds
 
 
 def generate_list_embed(server_id):
@@ -675,7 +695,7 @@ async def update_overview(server_id):
     if overview_message is None:
         return
 
-    updated_overview_embed = generate_overview_embed(server_id)
+    updated_overview_embed = generate_overview_embeds(server_id)[0]
     if updated_overview_embed is not None:
         await overview_message.edit(embed=updated_overview_embed)
 
@@ -1228,7 +1248,7 @@ async def overview(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
-    overview_embed = generate_overview_embed(ctx.guild.id)
+    overview_embed = generate_overview_embeds(ctx.guild.id)[0]
     if overview_embed is None:
         await ctx.send("No games registered for this server yet.")
         return
