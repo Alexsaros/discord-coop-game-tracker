@@ -730,6 +730,12 @@ async def update_all_overviews():
         await update_overview(server_id)
 
 
+async def update_all_lists():
+    dataset = read_dataset()
+    for server_id in dataset:
+        await update_list(server_id)
+
+
 def get_steam_game_data(steam_game_id):
     # Check if an actual Steam game ID was given
     if steam_game_id == 0:
@@ -840,6 +846,7 @@ async def update_dataset_steam_prices():
     log("Retrieved Steam prices")
 
     await update_all_overviews()
+    await update_all_lists()
 
 
 def search_steam_for_game(game_name):
