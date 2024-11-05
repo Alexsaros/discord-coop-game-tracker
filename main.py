@@ -552,7 +552,7 @@ def generate_overview_embeds(server_id):
     return embeds
 
 
-def generate_list_embed(server_id):
+def generate_list_embeds(server_id):
     server_id = str(server_id)
 
     dataset = read_dataset()
@@ -569,7 +569,9 @@ def generate_list_embed(server_id):
         log(f"Error: could not find server with ID {server_id}.")
         return None
 
-    games_list = []
+    title_text = "Games list (shows non-voters)"
+    list_embed = discord.Embed(title=title_text, color=LIST_EMBED_COLOR)
+
     for game_data, score in sorted_games:
         # Get everyone who hasn't voted yet
         non_voters = [member.name for member in guild.members if not member.bot]
@@ -585,21 +587,10 @@ def generate_list_embed(server_id):
         else:
             game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
             game_text = f"{game_data.id} - [{game_data.name}]({game_link}) {non_voters_text}"
-        games_list.append(game_text)
+        list_embed.add_field(name="", value=game_text, inline=False)
 
-    title_text = "Games list (shows non-voters)"
-    games_list_text = "\n".join(games_list)
-    # Determine if we can show all games in the embed
-    chars_over_limit = len(title_text) + len(games_list_text) - EMBED_MAX_CHARACTERS
-    if chars_over_limit > 0:
-        games_list_text = games_list_text[:-chars_over_limit - 3] + "..."
-
-    list_embed = discord.Embed(
-        title=title_text,
-        description=games_list_text,
-        color=LIST_EMBED_COLOR
-    )
-    return list_embed
+    embeds = paginate_embed(list_embed)
+    return embeds
 
 
 def generate_hog_embed(server_id):
@@ -707,7 +698,7 @@ async def update_list(server_id):
     if list_message is None:
         return
 
-    updated_list_embed = generate_list_embed(server_id)
+    updated_list_embed = generate_list_embeds(server_id)[0]
     if updated_list_embed is not None:
         await list_message.edit(embed=updated_list_embed)
 
@@ -1270,7 +1261,7 @@ async def list_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
-    list_embed = generate_list_embed(server_id)
+    list_embed = generate_list_embeds(server_id)[0]
     if list_embed is None:
         await ctx.send("No games registered for this server yet.")
         return
