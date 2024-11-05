@@ -582,11 +582,14 @@ def generate_list_embeds(server_id):
                 log(f"Error: failed to remove {name} from the members list: {e}")
         non_voters_text = get_users_aliases_string(server_dataset, non_voters)
 
-        if game_data.steam_id == 0:
-            game_text = f"{game_data.id} - {game_data.name} {non_voters_text}"
-        else:
+        game_text = f"{game_data.id} -"
+        if game_data.steam_id != 0:
             game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
-            game_text = f"{game_data.id} - [{game_data.name}]({game_link}) {non_voters_text}"
+            game_text += f" [{game_data.name}]({game_link})"
+        else:
+            game_text += " " + game_data.name
+        game_text += " " + generate_price_text(game_data)
+        game_text += " " + non_voters_text
         list_embed.add_field(name="", value=game_text, inline=False)
 
     embeds = paginate_embed(list_embed)
