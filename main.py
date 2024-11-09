@@ -1,4 +1,5 @@
 import os
+import threading
 import traceback
 import discord
 import asyncio
@@ -6,6 +7,8 @@ import json
 import time
 import requests
 import datetime
+import subprocess
+import flask
 from io import BytesIO
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -177,6 +180,29 @@ TAROT_CARDS = {
         "meaning_reversed": "An opportunity denied; you may feel your options are limited just now, but be patient - your time to travel and encounter exciting new opportunities will come.",
     },
 }
+
+bot_updater = flask.Flask(__name__)
+
+@bot_updater.route("/update-bot", methods=["POST"])
+def update_bot():
+    data = flask.request.json
+    if data and data.get("ref") == "refs/heads/main":
+        os.chdir("/home/alexsaro/discord-coop-game-tracker")
+        subprocess.run(["git", "pull"])
+
+        print("Pulled new git commits. Shutting down the bot so it can restart...")
+        threading.Thread(target=shutdown).start()
+    return "", 200
+
+async def shutdown():
+    time.sleep(1) # Wait a second to give a chance for any clean-up
+    bot.loop.stop()
+    await bot.close()
+    os._exit(0)
+
+if __name__ == "__main__":
+    updater_thread = threading.Thread(target=bot_updater.run, kwargs={"host": "192.168.2.2", "port": 5000})
+    updater_thread.start()
 
 intents = discord.Intents.default()
 intents.message_content = True
