@@ -1685,9 +1685,10 @@ async def horoscope(ctx):
     # Use the seed for random number generation
     rng = random.Random(seed)
 
-    THINGS = ["the local youth", "puppies", "the weather", "vampires", "liveliness", "death", "wealth", "unreasonable demands",
+    THINGS = ["destiny", "puppies", "the weather", "the supernatural", "liveliness", "death", "wealth", "unreasonable demands",
               "adventure", "bad luck", "good luck", "change", "disaster", "challenges", "unexpected news", "opportunities", "strong emotions",
               "punishment", "short breaks", "taxes", "happiness", "new relationships", "an unexpected gift", "secrets",
+              "destiny", "revelations", "the unknown", "fortune", "a turning point", "nature", "life", "personal growth", "a chance encounter",
               "Jo", "Alex", "Rento", "Remi"]
     if username == "remitoid":
         THINGS.remove("Remi")
@@ -1701,14 +1702,15 @@ async def horoscope(ctx):
     PREDICTIONS_PRE = ["must be cautious of", "would do well to avoid", "can expect", "might encounter", "would benefit from being accepting of",
                        "must not be receptive to", "can not avoid", "will be delighted by", "will be doomed by", "might be taken aback by",
                        "will experience", "could be pleasantly surprised by", "may find yourself dealing with", "should keep an eye on"]
-    WHERE = ["nearby", "close to you", "at your approximate location", "in your neighbourhood", "at the supermarket", "at the mall",
-             "under your bed", "where you least expect it", "at the pet store", "at church", "at a place you hold dear",
+    WHERE = ["nearby", "close to you", "at your approximate location", "in your neighbourhood", "in your surroundings", "within reach",
+             "under your bed", "where you least expect it", "somewhere close", "just around the corner", "at a place you hold dear",
              "in nature", "all around you", "on your daily commute", "on your next journey", "in a hidden location", "in crowded areas",
-             "on a quiet street", "in your dreams", "at your local park", "on your computer"]
+             "on a quiet street", "in your dreams", "amidst chaos", "in technology", "out there"]
     PREDICTIONS_POST = ["will find you", "will help you out", "might cause problems", "could appear", "will change things up",
                         "could distract you from your goal", "will be absent", "might offer a unique chance", "may disappear"]
     TIMES = ["before you know it", "when Mercury is in retrograde", "when you least expect it", "at an inopportune moment",
-             "in your hour of need", "at a moment of peace", "during unusual events", "at mealtime", "while you're out", "while you're relaxing"]
+             "in your hour of need", "at a moment of peace", "during unusual events", "at mealtime", "while you're out", "while you're relaxing",
+             "at just the right moment", "in the near future", "when the time is right", "when the opportunity arises"]
     ADVICE = ["my advice is to", "you would do best not to", "your future might change if you", "go forth and", "consider to",
               "be sure to", "it might be time to", "you'll find peace if you would", "try to", "do not hesitate to", "perhaps you should"]
     ACTIONS = ["go out and explore", "stay indoors", "take it easy", "be proactive", "reconsider things", "take advantage of new opportunities",
