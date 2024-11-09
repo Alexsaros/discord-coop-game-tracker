@@ -1830,8 +1830,9 @@ async def on_error(event, *args, **kwargs):
     raise
 
 
-# Allows for running multiple threads if needed in the future
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-loop.create_task(bot.start(BOT_TOKEN))
-loop.run_forever()
+if __name__ == "__main__":
+    # Allows for running multiple threads if needed in the future
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.create_task(bot.start(BOT_TOKEN))
+    loop.run_forever()
