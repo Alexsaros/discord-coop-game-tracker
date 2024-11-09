@@ -194,10 +194,9 @@ def update_bot():
         threading.Thread(target=shutdown).start()
     return "", 200
 
-async def shutdown():
+def shutdown():
     time.sleep(1) # Wait a second to give a chance for any clean-up
     bot.loop.stop()
-    await bot.close()
     os._exit(0)
 
 if __name__ == "__main__":
