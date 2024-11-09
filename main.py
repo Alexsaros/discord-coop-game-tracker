@@ -1711,7 +1711,7 @@ async def horoscope(ctx):
 async def kick(ctx, member_name):
     log(f"{ctx.author}: {ctx.message.content}")
     member_name = member_name.lower()
-    if member_name in ["co-op game tracker", "coop game tracker", "coopgametracker", "co-op game tracker#0487", "coop game tracker#0487", "coopgametracker#0487"]:
+    if member_name in ["cooper", "cooper#0487"]:
         await ctx.send("Ouch! Stop kicking me! :cry:")
         return
 
