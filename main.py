@@ -1178,12 +1178,16 @@ async def finish_game(ctx, game_name):
     if channel_object is None:
         log(f"Discord could not find channel with ID {channel_id}.")
     else:
+        game_text = game_data.name
+        if game_data.steam_id != 0:
+            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
+            game_text = f"[{game_text}](<{game_link}>)"
         # Create a thread for the game and its screenshots in the hall of game channel
         banner_file = get_steam_game_banner(game_data.steam_id)
         if banner_file is None:
-            banner_message = await channel_object.send(game_data.name)
+            banner_message = await channel_object.send(game_text)
         else:
-            banner_message = await channel_object.send(game_data.name, file=banner_file)
+            banner_message = await channel_object.send(game_text, file=banner_file)
         await banner_message.create_thread(name=game_data.name)
         await channel_object.create_thread(name=f"{game_data.name} screenshots", type=discord.ChannelType.public_thread)
 
