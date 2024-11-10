@@ -249,7 +249,7 @@ class GameData:
     player_count = 0
     steam_id = 0
     price_current = -1
-    price_original = -1
+    price_original = -1     # -2 means it is not yet released
     local = False
     played_before = None
 
@@ -445,7 +445,9 @@ def get_users_aliases_string(server_dataset, users_list):
 
 def generate_price_text(game_data):
     price_text = ""
-    if game_data.price_original >= 0:
+    if game_data.price_original == -2:
+        price_text = "coming soon"
+    elif game_data.price_original >= 0:
         price_original = game_data.price_original
         price_current = game_data.price_current
 
@@ -807,12 +809,18 @@ def get_game_price(steam_game_id):
     price_original = -1
     price_overview = steam_game_data.get("price_overview", {})
     if not price_overview:
-        # Sanity check to see if the game is really free
-        if not "is_free":
-            log(f"Warning: is_free is False, but missing price_overview for game {game_name}.")
+        # Check if the game has already been released
+        unreleased = steam_game_data.get("release_date", {}).get("coming_soon", False)
+        if unreleased:
+            price_current = -2
+            price_original = -2
         else:
-            price_current = 0
-            price_original = 0
+            # Sanity check to see if the game is really free
+            if not "is_free":
+                log(f"Warning: is_free is False, but missing price_overview for game {game_name}.")
+            else:
+                price_current = 0
+                price_original = 0
     else:
         price_currency = price_overview["currency"]
         if price_currency != "EUR":
