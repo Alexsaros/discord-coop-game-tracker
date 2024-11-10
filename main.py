@@ -918,7 +918,7 @@ async def update_dataset_steam_prices():
 def search_steam_for_game(game_name):
     """
     Uses the Steam API to search for the given game.
-    Returns a dictionary containing the "id", "price_current" and "price_original" keys.
+    Returns a dictionary retrieved from the Steam API matching the given game.
     Returns None if no results were found.
     """
     game_name = game_name.lower()
@@ -951,29 +951,7 @@ def search_steam_for_game(game_name):
     else:
         game_match = game_results[0]
 
-    price_current = -1
-    price_original = -1
-    price_overview = game_match.get("price", {})
-    if not price_overview:
-        # The game is free
-        price_current = 0
-        price_original = 0
-    else:
-        price_currency = price_overview["currency"]
-        if price_currency != "EUR":
-            game_name = game_match["name"]
-            log(f"Error: received currency {price_currency} for game {game_name}.")
-        else:
-            price_current = price_overview["final"] / 100
-            price_original = price_overview["initial"] / 100
-
-    steam_info = {
-        "id": game_match["id"],
-        "price_current": price_current,
-        "price_original": price_original,
-    }
-
-    return steam_info
+    return game_match
 
 
 @bot.event
@@ -1150,10 +1128,13 @@ async def add_game(ctx, game_name):
 
     # Search Steam for this game and save the info
     steam_game_info = search_steam_for_game(game_name)
-    if steam_game_info is not None:
+    if steam_game_info is not None and \
+            "id" in steam_game_info:
         game_data.steam_id = steam_game_info["id"]
-        game_data.price_current = steam_game_info["price_current"]
-        game_data.price_original = steam_game_info["price_original"]
+        game_price = get_game_price(game_data.steam_id)
+        if game_price is not None:
+            game_data.price_current = game_price["price_current"]
+            game_data.price_original = game_price["price_original"]
 
     # Add miscellaneous info, add the game to the server's dataset, and save the dataset
     game_data.name = game_name
