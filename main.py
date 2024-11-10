@@ -26,6 +26,7 @@ DATASET_FILE = "dataset.json"
 
 EMBED_MAX_FIELDS = 25
 EMBED_MAX_CHARACTERS = 6000
+EMBED_DESCRIPTION_MAX_CHARACTERS = 4096
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 OVERVIEW_EMBED_COLOR = discord.Color.blue()
 LIST_EMBED_COLOR = discord.Color.blurple()
@@ -528,7 +529,7 @@ def get_game_embed_field(game_data, server_dataset):
     return embed_field_info
 
 
-def paginate_embed(embed: discord.Embed):
+def paginate_embed_fields(embed: discord.Embed):
     embeds = []
     new_embed = discord.Embed(title=embed.title, color=embed.color)
     embeds.append(new_embed)
@@ -547,6 +548,28 @@ def paginate_embed(embed: discord.Embed):
         # Add the field to the new embed
         current_embed_length += field_length
         new_embed.add_field(name=field.name, value=field.value, inline=field.inline)
+
+    # Update each embed's title to indicate their page number
+    if len(embeds) > 1:
+        for i, new_embed in enumerate(embeds, 1):
+            new_embed.title += f" (page {i}/{len(embeds)})"
+
+    return embeds
+
+
+def paginate_embed_description(embed: discord.Embed):
+    embeds = []
+    current_embed_description = ""
+
+    for line in embed.description.split("\n"):
+        # Check if there's enough space left for this line in the embed, if not, create a new embed with the description that fits
+        if (len(current_embed_description) + len(line)) > EMBED_DESCRIPTION_MAX_CHARACTERS:
+            embeds.append(discord.Embed(title=embed.title, description=current_embed_description, color=embed.color))
+            current_embed_description = ""
+
+        current_embed_description += "\n" + line
+
+    embeds.append(discord.Embed(title=embed.title, description=current_embed_description, color=embed.color))
 
     # Update each embed's title to indicate their page number
     if len(embeds) > 1:
@@ -575,7 +598,7 @@ def generate_overview_embeds(server_id):
         embed_field_info = get_game_embed_field(game_data, server_dataset)
         embed.add_field(**embed_field_info)
 
-    embeds = paginate_embed(embed)
+    embeds = paginate_embed_fields(embed)
     return embeds
 
 
@@ -596,9 +619,7 @@ def generate_list_embeds(server_id):
         log(f"Error: could not find server with ID {server_id}.")
         return None
 
-    title_text = "Games list (shows non-voters)"
-    list_embed = discord.Embed(title=title_text, color=LIST_EMBED_COLOR)
-
+    games_list = []
     for game_data, score in sorted_games:
         # Get everyone who hasn't voted yet
         non_voters = [member.name for member in guild.members if not member.bot]
@@ -615,11 +636,23 @@ def generate_list_embeds(server_id):
             game_text += f" [{game_data.name}]({game_link})"
         else:
             game_text += " " + game_data.name
-        game_text += " " + generate_price_text(game_data)
-        game_text += " " + non_voters_text
-        list_embed.add_field(name="", value=game_text, inline=False)
+        price_text = generate_price_text(game_data)
+        if price_text:
+            game_text += " " + generate_price_text(game_data)
+        if non_voters_text:
+            game_text += " " + non_voters_text
 
-    embeds = paginate_embed(list_embed)
+        games_list.append(game_text)
+
+    title_text = "Games list (shows non-voters)"
+    games_list_text = "\n".join(games_list)
+
+    list_embed = discord.Embed(
+        title=title_text,
+        description=games_list_text,
+        color=LIST_EMBED_COLOR
+    )
+    embeds = paginate_embed_description(list_embed)
     return embeds
 
 
