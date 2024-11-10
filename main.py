@@ -1579,7 +1579,7 @@ async def rename_game(ctx, game_name, new_game_name):
 
 
 @bot.command(name="affinity", help="Shows how similarly you vote to other people. Example: !affinity.")
-async def rename_game(ctx):
+async def show_affinity(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
     username = str(ctx.author)
