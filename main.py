@@ -184,6 +184,7 @@ TAROT_CARDS = {
 
 bot_updater = flask.Flask(__name__)
 
+
 @bot_updater.route("/update-bot", methods=["POST"])
 def update_bot():
     data = flask.request.json
@@ -195,12 +196,15 @@ def update_bot():
         threading.Thread(target=shutdown).start()
     return "", 200
 
+
 def shutdown():
-    time.sleep(1) # Wait a second to give a chance for any clean-up
+    time.sleep(1)       # Wait a second to give a chance for any clean-up
     bot.loop.stop()
     os._exit(0)
 
+
 if __name__ == "__main__":
+    # Start a thread that will restart this script whenever a Git commit has been pushed to the repo
     updater_thread = threading.Thread(target=bot_updater.run, kwargs={"host": "192.168.2.2", "port": 5000})
     updater_thread.start()
 
