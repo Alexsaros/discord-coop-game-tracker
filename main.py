@@ -1683,6 +1683,38 @@ async def show_affinity(ctx):
     await ctx.message.delete()
 
 
+def get_users_voice_channel(username, server_id):
+    """
+    Returns the voice channel the user is in, or None if they're not in a voice channel or could not be found.
+    """
+    username = str(username)
+
+    guild = get_discord_guild_object(server_id)
+    if guild is None:
+        return None
+
+    user = guild.get_member_named(username)
+    if user is None:
+        log(f"No user named {username} found.")
+        return None
+
+    if user.voice is None or user.voice.channel is None:
+        print(f"{username} is not in a voice channel.")
+        return None
+
+    return user.voice.channel
+
+
+async def play_audio(voice_channel, audio_path):
+    voice_client = await voice_channel.connect()
+    voice_client.play(discord.FFmpegPCMAudio(audio_path))
+
+    while voice_client.is_playing():
+        await asyncio.sleep(1)
+
+    await voice_client.disconnect()
+
+
 @bot.command(name="tarot", help="Draws a major arcana tarot card. Example: !tarot.")
 async def tarot(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
