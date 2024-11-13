@@ -237,6 +237,8 @@ class CustomHelpCommand(commands.DefaultHelpCommand):
 
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=CustomHelpCommand())
 
+scheduler = AsyncIOScheduler()
+
 
 def log(message):
     print(message)
@@ -979,9 +981,8 @@ async def on_ready():
     # Checks Steam and displays the updated prices
     await update_dataset_steam_prices()
 
-    # Start a scheduler to update the prices at 0 and 12 o'clock each day
-    scheduler = AsyncIOScheduler()
-    scheduler.add_job(update_dataset_steam_prices, "cron", hour="0,12")
+    # Create a job to update the prices every 6 hours, and start the scheduler
+    scheduler.add_job(update_dataset_steam_prices, "cron", hour="0,6,12,18")
     scheduler.start()
 
 
