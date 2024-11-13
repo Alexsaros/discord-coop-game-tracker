@@ -614,9 +614,8 @@ def generate_list_embeds(server_id):
     server_dataset = dataset[server_id]
     sorted_games = sort_games_by_score(server_dataset)
 
-    guild = bot.get_guild(int(server_id))
+    guild = get_discord_guild_object(server_id)
     if guild is None:
-        log(f"Error: could not find server with ID {server_id}.")
         return None
 
     games_list = []
@@ -671,9 +670,8 @@ def generate_hog_embed(server_id):
         log("No completed games found.")
         return None
 
-    guild = bot.get_guild(int(server_id))
+    guild = get_discord_guild_object(server_id)
     if guild is None:
-        log(f"Error: could not find server with ID {server_id}.")
         return None
 
     games_list = []
@@ -700,10 +698,26 @@ def generate_hog_embed(server_id):
     return list_embed
 
 
+def get_discord_guild_object(server_id):
+    """
+    Gets Discord's guild object for the given server ID.
+    Returns None if not found.
+    """
+    server_id = str(server_id)
+
+    # Get the Discord server object
+    guild_object = bot.get_guild(int(server_id))
+    if guild_object is None:
+        log(f"Discord could not find guild with ID {server_id}.")
+        return None
+    return guild_object
+
+
 async def get_live_message_object(server_id, message_type):
     """
     Gets the message object for one of the live updating messages.
     Currently supports "overview" and "list" as message types.
+    Returns None if not found.
     """
     server_id = str(server_id)
 
@@ -714,10 +728,9 @@ async def get_live_message_object(server_id, message_type):
         log(f"Could not find server with ID {server_id} in dataset.")
         return None
 
-    # Get the Discord server object
-    server_object = bot.get_guild(int(server_id))
-    if server_object is None:
-        log(f"Discord could not find server with ID {server_id}.")
+    # Get the Discord guild object
+    guild_object = get_discord_guild_object(server_id)
+    if guild_object is None:
         return None
 
     # Get the channel ID in which the message was sent
@@ -727,7 +740,7 @@ async def get_live_message_object(server_id, message_type):
         return None
 
     # Get the Discord channel object
-    channel_object = server_object.get_channel(channel_id)
+    channel_object = guild_object.get_channel(channel_id)
     if channel_object is None:
         log(f"Discord could not find channel with ID {channel_id}.")
         return None
