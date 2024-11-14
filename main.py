@@ -33,6 +33,7 @@ LIST_EMBED_COLOR = discord.Color.blurple()
 AFFINITY_EMBED_COLOR = discord.Color.purple()
 TAROT_EMBED_COLOR = discord.Color.gold()
 HOROSCOPE_EMBED_COLOR = discord.Color.magenta()
+LIST_PLAY_WITHOUT_EMBED_COLOR = discord.Color.red()
 
 EMOJIS = {
     "owned": ":video_game:",
@@ -1335,7 +1336,7 @@ async def overview(ctx):
     await ctx.message.delete()
 
 
-@bot.command(name="list", help="Displays a sorted list of all games (does not update). Example: !list.")
+@bot.command(name="list", help="Displays a sorted list of all games. Example: !list.")
 async def list_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
@@ -1353,6 +1354,95 @@ async def list_games(ctx):
     dataset[server_id]["list_channel_id"] = ctx.channel.id
     save_dataset(dataset)
 
+    await ctx.message.delete()
+
+
+@bot.command(name="play_without", help="Displays a sorted list of games that the given user rated low. Example: !play_without alexsaro. :cry:")
+async def play_without(ctx, username):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+
+    member_names = [member.name for member in ctx.guild.members if not member.bot]
+    if username not in member_names:
+        await ctx.send(f"Could not find user named \"{username}\".")
+        return
+
+    dataset = read_dataset()
+    # Try to narrow down the dataset to this server
+    if server_id not in dataset:
+        log(f"Could not find server {server_id} in the dataset.")
+        return None
+
+    server_dataset = dataset[server_id]
+
+    member_count = server_dataset["member_count"]
+    game_dataset = server_dataset.get("games", {})
+    game_scores = []
+
+    for game_data_dict in game_dataset.values():
+        game_data = GameData(json_data=game_data_dict)
+
+        # Skip games that the user voted 5 or higher on
+        votes = game_data.votes
+        if votes.get(username, 5) >= 5:
+            continue
+
+        # Count the score for this game
+        total_score = 0
+        for voter, score in votes.items():
+            if voter != username:
+                total_score += score
+            else:
+                total_score -= score * member_count
+        # Use a score of 5 for the non-voters
+        non_voters = member_count - len(votes)
+        total_score += non_voters * 5
+
+        game_scores.append((game_data, total_score))
+
+    sorted_games = sorted(game_scores, key=lambda x: x[1], reverse=True)
+
+    guild = get_discord_guild_object(server_id)
+    if guild is None:
+        return None
+
+    games_list = []
+    for game_data, score in sorted_games:
+        # Get everyone who hasn't voted yet
+        non_voters = [member.name for member in guild.members if not member.bot]
+        for name in game_data.votes.keys():
+            try:
+                non_voters.remove(name)
+            except ValueError as e:
+                log(f"Error: failed to remove {name} from the members list: {e}")
+        non_voters_text = get_users_aliases_string(server_dataset, non_voters)
+
+        game_text = f"{game_data.id} -"
+        if game_data.steam_id != 0:
+            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
+            game_text += f" [{game_data.name}]({game_link})"
+        else:
+            game_text += " " + game_data.name
+        price_text = generate_price_text(game_data)
+        if price_text:
+            game_text += " " + generate_price_text(game_data)
+        if non_voters_text:
+            game_text += " " + non_voters_text
+
+        games_list.append(game_text)
+
+    title_text = f"Potential games to play without {username}"
+    games_list_text = "\n".join(games_list)
+
+    list_embed = discord.Embed(
+        title=title_text,
+        description=games_list_text,
+        color=LIST_PLAY_WITHOUT_EMBED_COLOR
+    )
+    embeds = paginate_embed_description(list_embed)
+    list_embed = embeds[0]
+
+    await ctx.send(embed=list_embed)
     await ctx.message.delete()
 
 
