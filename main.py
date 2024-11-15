@@ -1836,7 +1836,13 @@ async def play_bedtime_audio(username, server_id):
     voice_channel = get_users_voice_channel(username, server_id)
     if voice_channel is None:
         return
-    await play_audio(voice_channel, BEDTIME_MP3)
+
+    # If the user has a unique bedtime mp3, play that, otherwise play the generic mp3
+    user_specific_bedtime_mp3 = f"bedtime_{username}.mp3"
+    if os.path.isfile(user_specific_bedtime_mp3):
+        await play_audio(voice_channel, user_specific_bedtime_mp3)
+    else:
+        await play_audio(voice_channel, BEDTIME_MP3)
 
 
 @bot.command(name="bedtime", help="Sets a reminder for your bedtime (CET). Example: !bedtime 21:30.")
@@ -1872,7 +1878,7 @@ async def set_bedtime(ctx, bedtime):
         bedtimes.pop(username, None)
     else:
         # Schedule the new bedtime
-        job = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=f"{username}-bedtime")
+        job = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=f"bedtime_{username}")
 
         # Save the new bedtime
         user_bedtime_data = {
