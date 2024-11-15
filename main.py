@@ -27,6 +27,7 @@ STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 DATASET_FILE = "dataset.json"
 BEDTIME_MP3 = "bedtime.mp3"
 
+BEDTIME_LATE_INTERVAL_MINUTES = 10
 EMBED_MAX_FIELDS = 25
 EMBED_MAX_CHARACTERS = 6000
 EMBED_DESCRIPTION_MAX_CHARACTERS = 4096
@@ -990,6 +991,14 @@ def load_scheduler_jobs():
             minute = int(bedtime_split[1])
             scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=bedtime_job_id)
 
+            # Re-schedule the late bedtime reminder as well
+            bedtime_late_job_id = bedtime_data["job_late_id"]
+            bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+            bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
+            hour_late = bedtime_late.hour
+            minute_late = bedtime_late.minute
+            scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[username, server_id, True], id=bedtime_late_job_id)
+
 
 @bot.event
 async def on_ready():
@@ -1824,6 +1833,9 @@ def get_users_voice_channel(username, server_id):
 
 async def play_audio(voice_channel, audio_path):
     voice_client = await voice_channel.connect()
+
+    # Wait a little to give the "joined channel" sound effect time to go away before we start playing sound
+    await asyncio.sleep(0.5)
     voice_client.play(discord.FFmpegPCMAudio(audio_path))
 
     while voice_client.is_playing():
@@ -1832,17 +1844,26 @@ async def play_audio(voice_channel, audio_path):
     await voice_client.disconnect()
 
 
-async def play_bedtime_audio(username, server_id):
+async def play_bedtime_audio(username, server_id, late_reminder=False):
     voice_channel = get_users_voice_channel(username, server_id)
     if voice_channel is None:
         return
 
-    # If the user has a unique bedtime mp3, play that, otherwise play the generic mp3
-    user_specific_bedtime_mp3 = f"bedtime_{username}.mp3"
+    user_specific_bedtime_mp3 = f"bedtime_"
+    if late_reminder:
+        user_specific_bedtime_mp3 += "late_"
+    user_specific_bedtime_mp3 += f"{username}.mp3"
+
+    # If the user has a unique bedtime mp3, play that
     if os.path.isfile(user_specific_bedtime_mp3):
         await play_audio(voice_channel, user_specific_bedtime_mp3)
     else:
-        await play_audio(voice_channel, BEDTIME_MP3)
+        if late_reminder:
+            # If the user has not set an mp3 for the late reminder, do not play anything
+            return
+        else:
+            # User has not set an mp3, so play the generic mp3
+            await play_audio(voice_channel, BEDTIME_MP3)
 
 
 @bot.command(name="bedtime", help="Sets a reminder for your bedtime (CET). Example: !bedtime 21:30.")
@@ -1868,10 +1889,15 @@ async def set_bedtime(ctx, bedtime):
     # First stop any existing bedtimes for this user
     if username in bedtimes:
         old_job_id = bedtimes[username]["job_id"]
+        old_job_late_id = bedtimes[username]["job_late_id"]
         try:
             scheduler.remove_job(old_job_id)
         except JobLookupError as e:
             log(f"Error! Unable to remove scheduled bedtime job with id {old_job_id}. {e}")
+        try:
+            scheduler.remove_job(old_job_late_id)
+        except JobLookupError as e:
+            log(f"Error! Unable to remove scheduled late bedtime job with id {old_job_late_id}. {e}")
 
     # If a negative value was given, remove the bedtime alarm
     if hour < 0 or minute < 0:
@@ -1880,10 +1906,18 @@ async def set_bedtime(ctx, bedtime):
         # Schedule the new bedtime
         job = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=f"bedtime_{username}")
 
+        # Also schedule a later reminder
+        bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+        bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
+        hour_late = bedtime_late.hour
+        minute_late = bedtime_late.minute
+        job_late = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[username, server_id, True], id=f"bedtime_late_{username}")
+
         # Save the new bedtime
         user_bedtime_data = {
             "time": f"{hour:02}:{minute:02}",
             "job_id": job.id,
+            "job_late_id": job_late.id,
         }
         bedtimes[username] = user_bedtime_data
 
