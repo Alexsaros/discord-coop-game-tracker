@@ -12,7 +12,9 @@ import flask
 from io import BytesIO
 from discord.ext import commands
 from dotenv import load_dotenv
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 import random
 
 
@@ -23,6 +25,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 
 DATASET_FILE = "dataset.json"
+BEDTIME_MP3 = "bedtime.mp3"
 
 EMBED_MAX_FIELDS = 25
 EMBED_MAX_CHARACTERS = 6000
@@ -353,6 +356,7 @@ def create_new_server_entry():
         "hall_of_game_channel_id": 0,
         "aliases": {},
         "finished_games": {},
+        "bedtimes": {},
     }
 
 
@@ -974,6 +978,19 @@ def search_steam_for_game(game_name):
     return game_match
 
 
+def load_scheduler_jobs():
+    dataset = read_dataset()
+    for server_id, server_dataset in dataset.items():
+        # Re-schedule each bedtime job
+        bedtimes = server_dataset.get("bedtimes", {})
+        for username, bedtime_data in bedtimes.items():
+            bedtime_job_id = bedtime_data["job_id"]
+            bedtime_split = bedtime_data["time"].split(":")
+            hour = int(bedtime_split[0])
+            minute = int(bedtime_split[1])
+            scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=bedtime_job_id)
+
+
 @bot.event
 async def on_ready():
     log(f"\n\n\n{datetime.datetime.now()}")
@@ -985,6 +1002,11 @@ async def on_ready():
     # Create a job to update the prices every 6 hours, and start the scheduler
     scheduler.add_job(update_dataset_steam_prices, "cron", hour="0,6,12,18")
     scheduler.start()
+
+    # Load scheduled jobs that were saved during earlier runs
+    load_scheduler_jobs()
+
+    log("Finished on_ready()")
 
 
 @bot.event
@@ -1808,6 +1830,63 @@ async def play_audio(voice_channel, audio_path):
         await asyncio.sleep(1)
 
     await voice_client.disconnect()
+
+
+async def play_bedtime_audio(username, server_id):
+    voice_channel = get_users_voice_channel(username, server_id)
+    if voice_channel is None:
+        return
+    await play_audio(voice_channel, BEDTIME_MP3)
+
+
+@bot.command(name="bedtime", help="Sets a reminder for your bedtime (CET). Example: !bedtime 21:30.")
+async def set_bedtime(ctx, bedtime):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+    username = str(ctx.author.name)
+
+    try:
+        bedtime_split = bedtime.split(":")
+        hour = int(bedtime_split[0])
+        minute = 0 if len(bedtime_split) == 1 else int(bedtime_split[1])
+        assert hour < 24
+        assert minute < 60
+    except (ValueError, IndexError, AssertionError):
+        await ctx.send("Invalid time given.")
+        return
+
+    dataset = read_dataset()
+    server_dataset = dataset.get(server_id, {})
+    bedtimes = server_dataset.get("bedtimes", {})
+
+    # First stop any existing bedtimes for this user
+    if username in bedtimes:
+        old_job_id = bedtimes[username]["job_id"]
+        try:
+            scheduler.remove_job(old_job_id)
+        except JobLookupError as e:
+            log(f"Error! Unable to remove scheduled bedtime job with id {old_job_id}. {e}")
+
+    # If a negative value was given, remove the bedtime alarm
+    if hour < 0 or minute < 0:
+        bedtimes.pop(username, None)
+    else:
+        # Schedule the new bedtime
+        job = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=f"{username}-bedtime")
+
+        # Save the new bedtime
+        user_bedtime_data = {
+            "time": f"{hour:02}:{minute:02}",
+            "job_id": job.id,
+        }
+        bedtimes[username] = user_bedtime_data
+
+    # Save the updated dataset
+    server_dataset["bedtimes"] = bedtimes
+    dataset[server_id] = server_dataset
+    save_dataset(dataset)
+
+    await ctx.message.delete()
 
 
 @bot.command(name="tarot", help="Draws a major arcana tarot card. Example: !tarot.")
