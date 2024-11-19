@@ -9,6 +9,7 @@ python-dotenv = "*"
 apscheduler = "*"
 requests = "*"
 flask = "*"
+PyNaCl = "*"
 
 [requires]
 python_version = "3.*"
