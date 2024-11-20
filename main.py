@@ -1904,14 +1904,14 @@ async def set_bedtime(ctx, bedtime):
         bedtimes.pop(username, None)
     else:
         # Schedule the new bedtime
-        job = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=f"bedtime_{username}")
+        job = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=f"{server_id}_bedtime_{username}")
 
         # Also schedule a later reminder
         bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
         bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
         hour_late = bedtime_late.hour
         minute_late = bedtime_late.minute
-        job_late = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[username, server_id, True], id=f"bedtime_late_{username}")
+        job_late = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[username, server_id, True], id=f"{server_id}_bedtime_late_{username}")
 
         # Save the new bedtime
         user_bedtime_data = {
