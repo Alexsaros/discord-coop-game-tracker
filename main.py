@@ -1834,12 +1834,15 @@ def get_users_voice_channel(username, server_id):
 async def play_audio(voice_channel, audio_path):
     voice_client = await voice_channel.connect()
 
-    # Wait a little to give the "joined channel" sound effect time to go away before we start playing sound
-    await asyncio.sleep(0.5)
-    voice_client.play(discord.FFmpegPCMAudio(audio_path))
+    try:
+        # Wait a little to give the "joined channel" sound effect time to go away before we start playing sound
+        await asyncio.sleep(0.5)
+        voice_client.play(discord.FFmpegPCMAudio(audio_path))
 
-    while voice_client.is_playing():
-        await asyncio.sleep(1)
+        while voice_client.is_playing():
+            await asyncio.sleep(1)
+    except Exception as e:
+        log(f"Error: failed to play audio. {e}")
 
     await voice_client.disconnect()
 
