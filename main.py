@@ -1002,6 +1002,7 @@ def load_scheduler_jobs():
 
 @bot.event
 async def on_connect():
+    log(f"\n\n\n{datetime.datetime.now()}")
     scheduler.start()
 
     # Load scheduled jobs that were saved during earlier runs
@@ -1012,7 +1013,6 @@ async def on_connect():
 
 @bot.event
 async def on_ready():
-    log(f"\n\n\n{datetime.datetime.now()}")
     log(f"{bot.user} has connected to Discord!")
 
     # Checks Steam and displays the updated prices
