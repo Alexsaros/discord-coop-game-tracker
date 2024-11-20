@@ -1001,6 +1001,16 @@ def load_scheduler_jobs():
 
 
 @bot.event
+async def on_connect():
+    scheduler.start()
+
+    # Load scheduled jobs that were saved during earlier runs
+    load_scheduler_jobs()
+
+    log("Finished on_connect()")
+
+
+@bot.event
 async def on_ready():
     log(f"\n\n\n{datetime.datetime.now()}")
     log(f"{bot.user} has connected to Discord!")
@@ -1010,10 +1020,6 @@ async def on_ready():
 
     # Create a job to update the prices every 6 hours, and start the scheduler
     scheduler.add_job(update_dataset_steam_prices, "cron", hour="0,6,12,18")
-    scheduler.start()
-
-    # Load scheduled jobs that were saved during earlier runs
-    load_scheduler_jobs()
 
     log("Finished on_ready()")
 
