@@ -24,7 +24,12 @@ PUBLIC_KEY = os.getenv("PUBLIC_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 
+ITAD_CLIENT_ID = os.getenv("ITAD_CLIENT_ID")
+ITAD_CLIENT_SECRET = os.getenv("ITAD_CLIENT_SECRET")
+ITAD_API_KEY = os.getenv("ITAD_API_KEY")
+
 DATASET_FILE = "dataset.json"
+FREE_TO_KEEP_GAMES_FILE = "free_to_keep_games.json"
 BEDTIME_MP3 = "bedtime.mp3"
 
 BEDTIME_LATE_INTERVAL_MINUTES = 10
@@ -979,6 +984,82 @@ def search_steam_for_game(game_name):
     return game_match
 
 
+async def announce_free_to_keep_game(free_game):
+    dataset = read_dataset()
+    for server_id, server_dataset in dataset.items():
+        # Get the Discord guild object
+        guild_object = get_discord_guild_object(server_id)
+        if guild_object is None:
+            return None
+
+        # Get the channel ID in which the overview is displayed
+        channel_id = server_dataset.get(f"overview_channel_id", 0)
+        if channel_id in (None, 0):
+            # This server does not have an overview message
+            return None
+
+        # Get the Discord channel object
+        channel_object = guild_object.get_channel(channel_id)
+        if channel_object is None:
+            log(f"Discord could not find channel with ID {channel_id}.")
+            return None
+
+        game_name = free_game["game_name"]
+        shop_name = free_game["shop_name"]
+        expiry_datetime = free_game["expiry_datetime"]
+        url = free_game["url"]
+        message_text = f"**{game_name}** is free on [{shop_name}](<{url}>) until {expiry_datetime}."
+        await channel_object.send(message_text)
+
+
+async def check_free_to_keep_games():
+    itad_deals_endpoint = "https://api.isthereanydeal.com/deals/v2"
+    params = {
+        "key": ITAD_API_KEY,
+        "filter": "N4IgDgTglgxgpiAXKAtlAdk9BXANrgGhBQEMAPJABgF9qg",     # Only free games (up to 0 euro)
+    }
+
+    response = requests.get(itad_deals_endpoint, params=params)
+    try:
+        response.raise_for_status()
+    except Exception as e:
+        log(f"Failed to get free-to-keep games. {e}")
+        return None
+
+    payload = response.json()
+    if payload["nextOffset"] >= 20:
+        log("Warning: not all free-to-keep games fit in the response.")
+
+    # Get the deals that we've already gotten earlier
+    if not os.path.exists(FREE_TO_KEEP_GAMES_FILE):
+        log(f"{FREE_TO_KEEP_GAMES_FILE} does not exist. Creating it...")
+        old_deals = {}
+    else:
+        with open(FREE_TO_KEEP_GAMES_FILE, "r") as file:
+            old_deals = json.load(file)     # type: dict[str, int, dict]
+
+    game_deals_list = payload["list"]
+    new_deals = {}
+    for game_deal in game_deals_list:
+        # Save info on this deal in the new_deals dictionary
+        deal_id = game_deal["id"]
+        deal_info = game_deal["deal"]
+        new_deals[deal_id] = {
+            "game_name": game_deal["title"],
+            "shop_name": deal_info["shop"]["name"],
+            "expiry_datetime": deal_info["expiry"],
+            "url": deal_info["url"],
+        }
+
+        # If this deal is new, send a message announcing the deal
+        if game_deal["id"] not in old_deals.keys():
+            await announce_free_to_keep_game(new_deals[deal_id])
+
+    # Save the deals we just retrieved
+    with open(FREE_TO_KEEP_GAMES_FILE, "w") as file:
+        json.dump(new_deals, file, indent=4)
+
+
 def load_scheduler_jobs():
     dataset = read_dataset()
     for server_id, server_dataset in dataset.items():
@@ -1017,9 +1098,13 @@ async def on_ready():
 
     # Checks Steam and displays the updated prices
     await update_dataset_steam_prices()
+    # Check any free-to-keep games
+    await check_free_to_keep_games()
 
-    # Create a job to update the prices every 6 hours, and start the scheduler
+    # Create a job to update the prices every 6 hours
     scheduler.add_job(update_dataset_steam_prices, "cron", hour="0,6,12,18")
+    # Create a job to check for new free-to-keep every 6 hours
+    scheduler.add_job(check_free_to_keep_games, "cron", hour="1,7,13,19")
 
     log("Finished on_ready()")
 
@@ -1259,7 +1344,7 @@ async def finish_game(ctx, game_name):
         game_text = game_data.name
         if game_data.steam_id != 0:
             game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
-            game_text = f"[{game_text}](<{game_link}>)"
+            game_text = f"[{game_text}](<{game_link}>)"     # Surround the link in <> to prevent a link embed from being added
         # Create a thread for the game and its screenshots in the hall of game channel
         banner_file = get_steam_game_banner(game_data.steam_id)
         if banner_file is None:
