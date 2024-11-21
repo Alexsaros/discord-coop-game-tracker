@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from dateutil import parser
 import random
 
 
@@ -1004,11 +1005,31 @@ async def announce_free_to_keep_game(free_game):
             log(f"Discord could not find channel with ID {channel_id}.")
             return None
 
+        # Calculate how much time is left for this deal and add it to a presentable string
+        expiry_string = ""
+        expiry_datetime = free_game["expiry_datetime"]
+        expiry_datetime_object = parser.isoparse(expiry_datetime)
+        formatted_time = expiry_datetime_object.strftime("%Y-%m-%d %H:%M")
+        expiry_string += formatted_time
+        time_until_expiry = expiry_datetime_object - datetime.datetime.now(expiry_datetime_object.tzinfo)
+        days_until_expiry = time_until_expiry.days
+        expiry_string += " ("
+        if days_until_expiry > 0:
+            expiry_string += f"{days_until_expiry} day"
+            if days_until_expiry != 1:
+                expiry_string += "s"
+            expiry_string += " and"
+        hours_until_expiry = int(time_until_expiry.seconds / 3600)
+        expiry_string += f" {hours_until_expiry} hour"
+        if hours_until_expiry != 1:
+            expiry_string += "s"
+        expiry_string += " left)"
+
+        # Get info needed to send in the message
         game_name = free_game["game_name"]
         shop_name = free_game["shop_name"]
-        expiry_datetime = free_game["expiry_datetime"]
         url = free_game["url"]
-        message_text = f"**{game_name}** is free on [{shop_name}](<{url}>) until {expiry_datetime}."
+        message_text = f"**{game_name}** is free to keep on [{shop_name}](<{url}>) until {expiry_string}."
         await channel_object.send(message_text)
 
 
