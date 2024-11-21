@@ -769,8 +769,15 @@ async def get_live_message_object(server_id, message_type):
         log(f"Error: {message_type}_message_id not found, but {message_type}_channel_id is present for server {server_id}.")
         return None
 
-    message = await channel_object.fetch_message(message_id)
-    return message
+    try:
+        message = await channel_object.fetch_message(message_id)
+        return message
+    except discord.errors.NotFound:
+        log(f"Could not find {message_type} with ID {message_id}. It has likely been deleted. Removing it from the dataset...")
+        dataset[server_id][f"{message_type}_channel_id"] = 0
+        dataset[server_id][f"{message_type}_message_id"] = 0
+        save_dataset(dataset)
+        return None
 
 
 async def update_overview(server_id):
