@@ -199,7 +199,7 @@ TAROT_CARDS = {
 bot_updater = flask.Flask(__name__)
 
 
-@bot_updater.route("/update-bot", methods=["POST"])
+@bot_updater.route("/update-discord-bot-cooper", methods=["POST"])
 def update_bot():
     data = flask.request.json
     if data and data.get("ref") == "refs/heads/main":
