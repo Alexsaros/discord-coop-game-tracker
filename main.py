@@ -1080,36 +1080,56 @@ async def announce_free_to_keep_game(free_game):
             log(f"Discord could not find channel with ID {channel_id}.")
             return None
 
-        # Calculate how much time is left for this deal and add it to a presentable string
-        expiry_string = ""
-        expiry_datetime = free_game["expiry_datetime"]
-        expiry_datetime_object = parser.isoparse(expiry_datetime)
-        formatted_time = expiry_datetime_object.strftime("%Y-%m-%d %H:%M")
-        expiry_string += formatted_time
-        time_until_expiry = expiry_datetime_object - datetime.datetime.now(expiry_datetime_object.tzinfo)
-        days_until_expiry = time_until_expiry.days
-        expiry_string += " ("
-        if days_until_expiry > 0:
-            expiry_string += f"{days_until_expiry} day"
-            if days_until_expiry != 1:
-                expiry_string += "s"
-            expiry_string += " and"
-        hours_until_expiry = int(time_until_expiry.seconds / 3600)
-        expiry_string += f" {hours_until_expiry} hour"
-        if hours_until_expiry != 1:
-            expiry_string += "s"
-        expiry_string += " left)"
-
-        # Get info needed to send in the message
-        game_name = free_game["game_name"]
-        shop_name = free_game["shop_name"]
-        url = free_game["url"]
-        message_text = f"**{game_name}** is free to keep on [{shop_name}](<{url}>) until {expiry_string}."
+        message_text = format_free_game_deal(free_game)
         await channel_object.send(message_text)
 
 
+def format_free_game_deal(free_game: dict):
+    """
+    Formats the given free game deal into human readable text including a hyperlink.
+
+    :param free_game: a dictionary containing the following keys: "game_name", "shop_name", "expiry_datetime", and "url".
+    :return: a string describing which game is free, for how long, where.
+    """
+    # Calculate how much time is left for this deal and add it to a presentable string
+    expiry_string = ""
+    expiry_datetime = free_game["expiry_datetime"]
+    expiry_datetime_object = parser.isoparse(expiry_datetime)
+    formatted_time = expiry_datetime_object.strftime("%Y-%m-%d %H:%M")
+    expiry_string += formatted_time
+    time_until_expiry = expiry_datetime_object - datetime.datetime.now(expiry_datetime_object.tzinfo)
+    days_until_expiry = time_until_expiry.days
+    expiry_string += " ("
+    if days_until_expiry > 0:
+        expiry_string += f"{days_until_expiry} day"
+        if days_until_expiry != 1:
+            expiry_string += "s"
+        expiry_string += " and"
+    hours_until_expiry = int(time_until_expiry.seconds / 3600)
+    expiry_string += f" {hours_until_expiry} hour"
+    if hours_until_expiry != 1:
+        expiry_string += "s"
+    expiry_string += " left)"
+
+    # Get info needed to send in the message
+    game_name = free_game["game_name"]
+    shop_name = free_game["shop_name"]
+    url = free_game["url"]
+    message_text = f"**{game_name}** is free to keep on [{shop_name}](<{url}>) until {expiry_string}."
+    return message_text
+
+
+async def notify_users_free_to_keep_game(free_game):
+    # Get the users that want to be notified of free games
+    users_to_notify = read_file_safe(USERS_NOTIFY_FREE_GAMES_FILE)  # type: dict[str, str]
+
+    for user_id in users_to_notify.keys():
+        user = bot.get_user(int(user_id))
+        formatted_message = format_free_game_deal(free_game)
+        await user.send(formatted_message)
+
+
 async def check_free_to_keep_games():
-    return  # TODO
     itad_deals_endpoint = "https://api.isthereanydeal.com/deals/v2"
     params = {
         "key": ITAD_API_KEY,
@@ -1145,7 +1165,7 @@ async def check_free_to_keep_games():
 
         # If this deal is new, send a message announcing the deal
         if game_deal["id"] not in old_deals.keys():
-            await announce_free_to_keep_game(new_deals[deal_id])
+            await notify_users_free_to_keep_game(new_deals[deal_id])
 
     # Save the deals we just retrieved
     with open(FREE_TO_KEEP_GAMES_FILE, "w") as file:
