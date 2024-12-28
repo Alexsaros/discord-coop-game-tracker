@@ -1085,6 +1085,7 @@ async def announce_free_to_keep_game(free_game):
 
 
 async def check_free_to_keep_games():
+    return  # TODO
     itad_deals_endpoint = "https://api.isthereanydeal.com/deals/v2"
     params = {
         "key": ITAD_API_KEY,
