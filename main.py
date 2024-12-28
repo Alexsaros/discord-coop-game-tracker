@@ -436,8 +436,10 @@ def filter_game_dataset(dataset: dict, server_id, game_name, finished=False):
         dataset[server_id] = create_new_server_entry()
     if finished:
         game_dataset = dataset[server_id]["finished_games"]
+        exception_template = "Could not find finished game with ***. Use: !finish \"game name\", to mark a game as finished."
     else:
         game_dataset = dataset[server_id]["games"]
+        exception_template = "Could not find game with ***. Use: !add \"game name\", to add a new game."
 
     try:
         # Check if the game was passed as ID
@@ -448,7 +450,7 @@ def filter_game_dataset(dataset: dict, server_id, game_name, finished=False):
                 return FinishedGameData(json_data=game_data_dict)
             else:
                 return GameData(json_data=game_data_dict)
-        raise CouldNotFindGameException(f"Could not find game with ID \"{game_id}\". Use: !add \"game name\", to add a new game.")
+        raise CouldNotFindGameException(exception_template.replace("***", f"ID \"{game_id}\""))
 
     except ValueError:
         for game_data_dict in game_dataset.values():
@@ -457,7 +459,7 @@ def filter_game_dataset(dataset: dict, server_id, game_name, finished=False):
                     return FinishedGameData(json_data=game_data_dict)
                 else:
                     return GameData(json_data=game_data_dict)
-        raise CouldNotFindGameException(f"Could not find game with name \"{game_name}\". Use: !add \"game name\", to add a new game.")
+        raise CouldNotFindGameException(exception_template.replace("***", f"name \"{game_name}\""))
 
 
 def add_game_to_dataset(dataset: dict, server_id, game_data: GameData, set_game_id=True):
@@ -1458,10 +1460,6 @@ async def enjoyed(ctx, game_name, score=5.0):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name, finished=True)
-    if game_data is None:
-        log(f"Could not find finished game: {str(game_data)}")
-        await ctx.send("Could not find finished game. Please use: !finish \"game name\", to mark a game as finished.")
-        return
 
     # Update the vote and save the new game data
     game_data.enjoyment_scores[str(ctx.author)] = score
