@@ -18,6 +18,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dateutil import parser
 import random
+import hmac
+import hashlib
 
 
 load_dotenv()
@@ -25,6 +27,7 @@ APP_ID = os.getenv("APP_ID")
 PUBLIC_KEY = os.getenv("PUBLIC_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
+GITHUB_WEBHOOK_SECRET_TOKEN = os.getenv("GITHUB_WEBHOOK_SECRET_TOKEN")
 
 ITAD_CLIENT_ID = os.getenv("ITAD_CLIENT_ID")
 ITAD_CLIENT_SECRET = os.getenv("ITAD_CLIENT_SECRET")
@@ -201,12 +204,27 @@ bot_updater = flask.Flask(__name__)
 
 @bot_updater.route("/update-discord-bot-cooper", methods=["POST"])
 def update_bot():
+    # Check if the request has the correct signature/secret
+    signature = flask.request.headers.get("X-Hub-Signature-256")
+    if not signature:
+        log("Incoming request does not have a `X-Hub-Signature-256` header.")
+        flask.abort(403)
+    sha_name, signature = signature.split("=")
+    if sha_name != "sha256":
+        log(f"Incoming request's X-Hub-Signature-256 does not use sha256, but `{sha_name}`.")
+        flask.abort(403)
+    # Using the secret, check if we compute the same HMAC for this request as the received HMAC
+    computed_hmac = hmac.new(GITHUB_WEBHOOK_SECRET_TOKEN.encode(), msg=flask.request.data, digestmod=hashlib.sha256)
+    if not hmac.compare_digest(computed_hmac.hexdigest(), signature):
+        log("Incoming request does not have a matching HMAC/secret.")
+        flask.abort(403)
+
     data = flask.request.json
     if data and data.get("ref") == "refs/heads/main":
         os.chdir("/home/alexsaro/discord-coop-game-tracker")
         subprocess.run(["git", "pull"])
 
-        print("Pulled new git commits. Shutting down the bot so it can restart...")
+        log("Pulled new git commits. Shutting down the bot so it can restart...")
         threading.Thread(target=shutdown).start()
     return "", 200
 
