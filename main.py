@@ -237,7 +237,7 @@ def shutdown():
 
 if __name__ == "__main__":
     # Start a thread that will restart this script whenever a Git commit has been pushed to the repo
-    updater_thread = threading.Thread(target=bot_updater.run, kwargs={"host": "192.168.2.2", "port": 5500})
+    updater_thread = threading.Thread(target=bot_updater.run, kwargs={"host": "127.0.0.1", "port": 5500})
     updater_thread.start()
 
 intents = discord.Intents.default()
