@@ -12,6 +12,7 @@ import flask
 import shutil
 from io import BytesIO
 from discord.ext import commands
+from discord.ext.commands import CommandInvokeError
 from dotenv import load_dotenv
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -245,6 +246,19 @@ intents.message_content = True
 intents.members = True
 
 
+class BotException(Exception):
+
+    message = ""
+
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+
+class CouldNotFindGameException(BotException):
+    pass
+
+
 class CustomHelpCommand(commands.DefaultHelpCommand):
 
     async def send_bot_help(self, mapping):
@@ -414,7 +428,7 @@ def create_new_server_entry():
 def filter_game_dataset(dataset: dict, server_id, game_name, finished=False):
     """
     Checks if the given dataset contains the given game, and returns the game's data as a GameData object.
-    Returns None if the game was not found.
+    Raises a CouldNotFindGameException if the game was not found.
     """
     # Narrow down the dataset to a specific server
     server_id = str(server_id)
@@ -434,6 +448,8 @@ def filter_game_dataset(dataset: dict, server_id, game_name, finished=False):
                 return FinishedGameData(json_data=game_data_dict)
             else:
                 return GameData(json_data=game_data_dict)
+        raise CouldNotFindGameException(f"Could not find game with ID \"{game_id}\". Use: !add \"game name\", to add a new game.")
+
     except ValueError:
         for game_data_dict in game_dataset.values():
             if game_data_dict["name"] == game_name:
@@ -441,7 +457,7 @@ def filter_game_dataset(dataset: dict, server_id, game_name, finished=False):
                     return FinishedGameData(json_data=game_data_dict)
                 else:
                     return GameData(json_data=game_data_dict)
-    return None
+        raise CouldNotFindGameException(f"Could not find game with name \"{game_name}\". Use: !add \"game name\", to add a new game.")
 
 
 def add_game_to_dataset(dataset: dict, server_id, game_data: GameData, set_game_id=True):
@@ -1236,9 +1252,10 @@ async def on_reaction_add(reaction, user):
         # Get the game's data
         dataset = read_dataset()
         server_dataset = dataset[server_id]
-        game_data = filter_game_dataset(dataset, server_id, game_name)
-        if game_data is None:
-            log(f"Could not find game: {str(game_data)}")
+        try:
+            game_data = filter_game_dataset(dataset, server_id, game_name)
+        except CouldNotFindGameException as e:
+            log(e)
             return
 
         # Try to perform an action based on the added reaction
@@ -1333,11 +1350,13 @@ async def add_game(ctx, game_name):
         pass
 
     dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is not None:
+    try:
+        game_data = filter_game_dataset(dataset, server_id, game_name)
         log(f"Game already added: {str(game_data)}")
         await ctx.send("This game has already been added.")
         return
+    except CouldNotFindGameException:
+        pass
 
     # Create an object for the new game,
     game_data = GameData()
@@ -1374,10 +1393,6 @@ async def remove_game(ctx, game_name):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game.")
-        return
 
     # Remove the game and save the dataset again without the game
     del dataset[server_id]["games"][str(game_data.id)]
@@ -1394,10 +1409,6 @@ async def finish_game(ctx, game_name):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game.")
-        return
 
     # Create a FinishedGameData object for this game and save it
     finished_game = FinishedGameData(json_data=game_data.to_json())
@@ -1497,10 +1508,6 @@ async def rate_game(ctx, game_name, score=5.0):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     # Update the vote and save the new game data
     game_data.votes[str(ctx.author)] = score
@@ -1650,10 +1657,6 @@ async def edit(ctx, game_name):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     server_dataset = dataset[server_id]
 
@@ -1679,10 +1682,6 @@ async def add_tag(ctx, game_name, tag_text):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     # Update the tags and save the new game data
     game_data.tags.append(tag_text)
@@ -1700,10 +1699,6 @@ async def remove_tag(ctx, game_name, tag_text):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     if tag_text not in game_data.tags:
         await ctx.send(f"Game \"{game_data.name}\" does not have tag \"{tag_text}\".")
@@ -1733,10 +1728,6 @@ async def own(ctx, game_name, owns_game="yes"):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     # Update the "owned" field and save the new game data
     game_data.owned[str(ctx.author)] = owned
@@ -1763,10 +1754,6 @@ async def players(ctx, game_name, player_count):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     # Update the "player_count" field and save the new game data
     game_data.player_count = player_count
@@ -1792,10 +1779,6 @@ async def set_local(ctx, game_name, is_local="yes"):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     # Update the "local" field and save the new game data
     game_data.local = local
@@ -1821,10 +1804,6 @@ async def set_played(ctx, game_name, played_before="yes"):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     # Update the "played_before" field and save the new game data
     game_data.played_before[str(ctx.author)] = experienced
@@ -1849,10 +1828,6 @@ async def set_steam_id(ctx, game_name, steam_id):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     # Update the "steam_id" field, retrieve the price again, and save the new game data
     game_data.steam_id = steam_id
@@ -1895,10 +1870,6 @@ async def rename_game(ctx, game_name, new_game_name):
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
-    if game_data is None:
-        log(f"Could not find game: {str(game_data)}")
-        await ctx.send("Could not find game. Please use: !add \"game name\", to add a new game.")
-        return
 
     # Update the name and save the new game data
     game_data.name = new_game_name
@@ -2288,6 +2259,13 @@ async def eight_ball(ctx):
 
 @bot.event
 async def on_command_error(ctx, error):
+    # If this was an intended exception, just send the exception message to the channel
+    if isinstance(error, CommandInvokeError):
+        if isinstance(error.original, BotException):
+            log(error.original.message)
+            await ctx.send(error.original.message)
+            return
+
     print("\nEncountered command error:")
     print(error)
     print(type(error))
