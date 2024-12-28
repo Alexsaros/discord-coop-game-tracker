@@ -36,6 +36,7 @@ ITAD_API_KEY = os.getenv("ITAD_API_KEY")
 
 DATASET_FILE = "dataset.json"
 FREE_TO_KEEP_GAMES_FILE = "free_to_keep_games.json"
+USERS_NOTIFY_FREE_GAMES_FILE = "users_notify_free_games.json"
 BEDTIME_MP3 = "bedtime.mp3"
 BACKUP_DIRECTORY = "backups"
 MAX_BACKUPS = 20
@@ -370,14 +371,19 @@ class FinishedGameData(GameData):
         return json_data
 
 
-def read_dataset():
-    if not os.path.exists(DATASET_FILE):
-        log(f"{DATASET_FILE} does not exist. Creating it...")
-        dataset = {}
+def read_file_safe(filename):
+    if not os.path.exists(filename):
+        log(f"{filename} does not exist. Creating it...")
+        file_data = {}
     else:
-        with open(DATASET_FILE, "r") as file:
-            dataset = json.load(file)   # type: dict[str, int, dict]
+        with open(filename, "r") as file:
+            file_data = json.load(file)
 
+    return file_data
+
+
+def read_dataset():
+    dataset = read_file_safe(DATASET_FILE)  # type: dict[str, int, dict]
     return dataset
 
 
@@ -1122,12 +1128,7 @@ async def check_free_to_keep_games():
         log("Warning: not all free-to-keep games fit in the response.")
 
     # Get the deals that we've already gotten earlier
-    if not os.path.exists(FREE_TO_KEEP_GAMES_FILE):
-        log(f"{FREE_TO_KEEP_GAMES_FILE} does not exist. Creating it...")
-        old_deals = {}
-    else:
-        with open(FREE_TO_KEEP_GAMES_FILE, "r") as file:
-            old_deals = json.load(file)     # type: dict[str, int, dict]
+    old_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)     # type: dict[str, int, dict]
 
     game_deals_list = payload["list"]
     new_deals = {}
@@ -1941,6 +1942,31 @@ async def show_affinity(ctx):
     )
 
     await ctx.send(embed=affinity_embed)
+    await ctx.message.delete()
+
+
+@bot.command(name="send_me_free_games", help="Opt in or out of receiving a message when a game is free to keep. Example: !send_me_free_games no. Defaults to \"yes\".")
+async def send_me_free_games(ctx, notify_on_free_game="yes"):
+    log(f"{ctx.author}: {ctx.message.content}")
+    user_id = str(ctx.author.id)
+
+    if notify_on_free_game[:1] == "y":
+        notify = True
+    elif notify_on_free_game[:1] == "n":
+        notify = False
+    else:
+        await ctx.send("Received invalid argument.")
+        return
+
+    users_to_notify = read_file_safe(USERS_NOTIFY_FREE_GAMES_FILE)  # type: dict[str, str]
+    if not notify:
+        users_to_notify.pop(user_id, None)
+    else:
+        users_to_notify[user_id] = ""   # Just save an empty string as the value for now. Maybe we'll have a use for the value in the future
+
+    with open(USERS_NOTIFY_FREE_GAMES_FILE, "w") as file:
+        json.dump(users_to_notify, file, indent=4)
+
     await ctx.message.delete()
 
 
