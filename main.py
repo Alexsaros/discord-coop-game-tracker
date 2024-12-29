@@ -260,6 +260,10 @@ class CouldNotFindGameException(BotException):
     pass
 
 
+class InvalidArgumentException(BotException):
+    pass
+
+
 class CustomHelpCommand(commands.DefaultHelpCommand):
 
     async def send_bot_help(self, mapping):
@@ -1172,6 +1176,16 @@ async def check_free_to_keep_games():
         json.dump(new_deals, file, indent=4)
 
 
+def parse_boolean(boolean_string):
+    boolean_string_lower = boolean_string.lower()
+    if boolean_string_lower[:1] in ["y", "t"]:
+        return True
+    elif boolean_string_lower[:1] in ["n", "f"]:
+        return False
+    else:
+        raise InvalidArgumentException(f"Received invalid argument ({boolean_string}). Must be either \"yes\" or \"no\".")
+
+
 def load_scheduler_jobs():
     dataset = read_dataset()
     for server_id, server_dataset in dataset.items():
@@ -1737,13 +1751,7 @@ async def own(ctx, game_name, owns_game="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
-    if owns_game[:1] == "y":
-        owned = True
-    elif owns_game[:1] == "n":
-        owned = False
-    else:
-        await ctx.send("Received invalid argument.")
-        return
+    owned = parse_boolean(owns_game)
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
@@ -1788,13 +1796,7 @@ async def set_local(ctx, game_name, is_local="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
-    if is_local[:1] == "y":
-        local = True
-    elif is_local[:1] == "n":
-        local = False
-    else:
-        await ctx.send("Received invalid argument.")
-        return
+    local = parse_boolean(is_local)
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
@@ -1813,13 +1815,7 @@ async def set_played(ctx, game_name, played_before="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
-    if played_before[:1] == "y":
-        experienced = True
-    elif played_before[:1] == "n":
-        experienced = False
-    else:
-        await ctx.send("Received invalid argument.")
-        return
+    experienced = parse_boolean(played_before)
 
     dataset = read_dataset()
     game_data = filter_game_dataset(dataset, server_id, game_name)
@@ -1970,13 +1966,7 @@ async def send_me_free_games(ctx, notify_on_free_game="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
     user_id = str(ctx.author.id)
 
-    if notify_on_free_game[:1] == "y":
-        notify = True
-    elif notify_on_free_game[:1] == "n":
-        notify = False
-    else:
-        await ctx.send("Received invalid argument.")
-        return
+    notify = parse_boolean(notify_on_free_game)
 
     users_to_notify = read_file_safe(USERS_NOTIFY_FREE_GAMES_FILE)  # type: dict[str, str]
     if not notify:
