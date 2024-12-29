@@ -382,6 +382,7 @@ class FreeGameDeal:
     shop_name = ""
     expiry_datetime = ""
     url = ""
+    type = ""   # Can be "game", "dlc", or "package"
 
     def __init__(self, json_data=None):
         if json_data:
@@ -393,6 +394,7 @@ class FreeGameDeal:
         self.shop_name = json_data.get("shop_name", "")
         self.expiry_datetime = json_data.get("expiry_datetime", "")
         self.url = json_data.get("url", "")
+        self.type = json_data.get("type", "")
 
     def to_json(self):
         return {
@@ -401,6 +403,7 @@ class FreeGameDeal:
             "shop_name": self.shop_name,
             "expiry_datetime": self.expiry_datetime,
             "url": self.url,
+            "type": self.type,
         }
 
     def to_message_text(self):
@@ -430,7 +433,10 @@ class FreeGameDeal:
             expiry_string += " left)"
 
         # Set up the the message
-        message_text = f"**{self.game_name}** is free to keep on [{self.shop_name}](<{self.url}>)"
+        message_text = f"**{self.game_name}**"
+        if self.type and self.type != "game":
+            message_text += f" (*{self.type.upper()}*)"
+        message_text += f" is free to keep on [{self.shop_name}](<{self.url}>)"
         if expiry_string:
             message_text += f" until {expiry_string}"
         message_text += "."
@@ -1167,6 +1173,7 @@ async def check_free_to_keep_games():
         free_game = FreeGameDeal()
         free_game.deal_id = game_deal["id"]
         free_game.game_name = game_deal["title"]
+        free_game.type = game_deal["type"]
         deal_info = game_deal["deal"]
         free_game.shop_name = deal_info["shop"]["name"]
         free_game.expiry_datetime = deal_info["expiry"]
