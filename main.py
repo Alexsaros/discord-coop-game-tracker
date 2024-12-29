@@ -375,6 +375,71 @@ class FinishedGameData(GameData):
         return json_data
 
 
+class FreeGameDeal:
+
+    deal_id = ""
+    game_name = ""
+    shop_name = ""
+    expiry_datetime = ""
+    url = ""
+
+    def __init__(self, json_data=None):
+        if json_data:
+            self.load_json(json_data)
+
+    def load_json(self, json_data):
+        self.deal_id = json_data.get("deal_id", "")
+        self.game_name = json_data.get("game_name", "")
+        self.shop_name = json_data.get("shop_name", "")
+        self.expiry_datetime = json_data.get("expiry_datetime", "")
+        self.url = json_data.get("url", "")
+
+    def to_json(self):
+        return {
+            "deal_id": self.deal_id,
+            "game_name": self.game_name,
+            "shop_name": self.shop_name,
+            "expiry_datetime": self.expiry_datetime,
+            "url": self.url,
+        }
+
+    def to_message_text(self):
+        """
+        Formats this free game deal into a message announcing it, including a hyperlink.
+
+        :return: a string describing that this game is free, for how long, and where to get it.
+        """
+        # Calculate how much time is left for this deal and add it to a presentable string
+        expiry_string = ""
+        if self.expiry_datetime:
+            expiry_datetime_object = parser.isoparse(self.expiry_datetime)
+            formatted_time = expiry_datetime_object.strftime("%Y-%m-%d %H:%M")
+            expiry_string += formatted_time
+            time_until_expiry = expiry_datetime_object - datetime.datetime.now(expiry_datetime_object.tzinfo)
+            days_until_expiry = time_until_expiry.days
+            expiry_string += " ("
+            if days_until_expiry > 0:
+                expiry_string += f"{days_until_expiry} day"
+                if days_until_expiry != 1:
+                    expiry_string += "s"
+                expiry_string += " and "
+            hours_until_expiry = int(time_until_expiry.seconds / 3600)
+            expiry_string += f"{hours_until_expiry} hour"
+            if hours_until_expiry != 1:
+                expiry_string += "s"
+            expiry_string += " left)"
+
+        # Set up the the message
+        message_text = f"**{self.game_name}** is free to keep on [{self.shop_name}](<{self.url}>)"
+        if expiry_string:
+            message_text += f" until {expiry_string}"
+        message_text += "."
+        return message_text
+
+    def __str__(self):
+        return str(self.to_json())
+
+
 def read_file_safe(filename):
     if not os.path.exists(filename):
         log(f"{filename} does not exist. Creating it...")
@@ -1064,52 +1129,13 @@ def search_steam_for_game(game_name):
     return game_match
 
 
-def format_free_game_deal(free_game: dict):
-    """
-    Formats the given free game deal into human readable text including a hyperlink.
-
-    :param free_game: a dictionary containing the following keys: "game_name", "shop_name", "expiry_datetime", and "url".
-    :return: a string describing which game is free, for how long, where.
-    """
-    # Calculate how much time is left for this deal and add it to a presentable string
-    expiry_string = ""
-    expiry_datetime = free_game["expiry_datetime"]
-    if expiry_datetime:
-        expiry_datetime_object = parser.isoparse(expiry_datetime)
-        formatted_time = expiry_datetime_object.strftime("%Y-%m-%d %H:%M")
-        expiry_string += formatted_time
-        time_until_expiry = expiry_datetime_object - datetime.datetime.now(expiry_datetime_object.tzinfo)
-        days_until_expiry = time_until_expiry.days
-        expiry_string += " ("
-        if days_until_expiry > 0:
-            expiry_string += f"{days_until_expiry} day"
-            if days_until_expiry != 1:
-                expiry_string += "s"
-            expiry_string += " and "
-        hours_until_expiry = int(time_until_expiry.seconds / 3600)
-        expiry_string += f"{hours_until_expiry} hour"
-        if hours_until_expiry != 1:
-            expiry_string += "s"
-        expiry_string += " left)"
-
-    # Get info needed to send in the message
-    game_name = free_game["game_name"]
-    shop_name = free_game["shop_name"]
-    url = free_game["url"]
-    message_text = f"**{game_name}** is free to keep on [{shop_name}](<{url}>)"
-    if expiry_string:
-        message_text += f" until {expiry_string}"
-    message_text += "."
-    return message_text
-
-
-async def notify_users_free_to_keep_game(free_game):
+async def notify_users_free_to_keep_game(free_game: FreeGameDeal):
     # Get the users that want to be notified of free games
     users_to_notify = read_file_safe(USERS_NOTIFY_FREE_GAMES_FILE)  # type: dict[str, str]
 
     for user_id in users_to_notify.keys():
         user = bot.get_user(int(user_id))
-        formatted_message = format_free_game_deal(free_game)
+        formatted_message = free_game.to_message_text()
         await user.send(formatted_message)
 
 
@@ -1137,19 +1163,21 @@ async def check_free_to_keep_games():
     game_deals_list = payload["list"]
     new_deals = {}
     for game_deal in game_deals_list:
-        # Save info on this deal in the new_deals dictionary
-        deal_id = game_deal["id"]
+        # Save info on this deal in a new FreeGameData object
+        free_game = FreeGameDeal()
+        free_game.deal_id = game_deal["id"]
+        free_game.game_name = game_deal["title"]
         deal_info = game_deal["deal"]
-        new_deals[deal_id] = {
-            "game_name": game_deal["title"],
-            "shop_name": deal_info["shop"]["name"],
-            "expiry_datetime": deal_info["expiry"],
-            "url": deal_info["url"],
-        }
+        free_game.shop_name = deal_info["shop"]["name"]
+        free_game.expiry_datetime = deal_info["expiry"]
+        free_game.url = deal_info["url"]
 
-        # If this deal is new, send a message announcing the deal
-        if game_deal["id"] not in old_deals.keys():
-            await notify_users_free_to_keep_game(new_deals[deal_id])
+        # Keep track of this deal by adding it to the new_deals dictionary
+        new_deals[free_game.deal_id] = free_game.to_json()
+
+        # If this deal is new, send a message to users who want to be notified
+        if free_game.deal_id not in old_deals.keys():
+            await notify_users_free_to_keep_game(free_game)
 
     # Save the deals we just retrieved
     with open(FREE_TO_KEEP_GAMES_FILE, "w") as file:
