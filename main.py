@@ -1064,30 +1064,6 @@ def search_steam_for_game(game_name):
     return game_match
 
 
-async def announce_free_to_keep_game(free_game):
-    dataset = read_dataset()
-    for server_id, server_dataset in dataset.items():
-        # Get the Discord guild object
-        guild_object = get_discord_guild_object(server_id)
-        if guild_object is None:
-            return None
-
-        # Get the channel ID in which the overview is displayed
-        channel_id = server_dataset.get(f"overview_channel_id", 0)
-        if channel_id in (None, 0):
-            # This server does not have an overview message
-            return None
-
-        # Get the Discord channel object
-        channel_object = guild_object.get_channel(channel_id)
-        if channel_object is None:
-            log(f"Discord could not find channel with ID {channel_id}.")
-            return None
-
-        message_text = format_free_game_deal(free_game)
-        await channel_object.send(message_text)
-
-
 def format_free_game_deal(free_game: dict):
     """
     Formats the given free game deal into human readable text including a hyperlink.
