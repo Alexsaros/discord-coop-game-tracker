@@ -1243,11 +1243,11 @@ async def on_ready():
     await check_free_to_keep_games()
 
     # Create a job to update the prices every 6 hours
-    scheduler.add_job(update_dataset_steam_prices, "cron", hour="0,6,12,18")
+    scheduler.add_job(update_dataset_steam_prices, CronTrigger(hour="0,6,12,18"))
     # Create a job to check for new free-to-keep every 6 hours
-    scheduler.add_job(check_free_to_keep_games, "cron", hour="1,7,13,19")
+    scheduler.add_job(check_free_to_keep_games, CronTrigger(hour="1,7,13,19"))
     # Create a job that makes a backup of the dataset every 12 hours
-    scheduler.add_job(create_backup, "cron", hour="2,14")
+    scheduler.add_job(create_backup, CronTrigger(hour="2,14"))
 
     log("Finished on_ready()")
 
