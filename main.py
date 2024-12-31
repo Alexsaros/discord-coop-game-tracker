@@ -18,6 +18,7 @@ from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dateutil import parser
+from bs4 import BeautifulSoup
 import random
 import hmac
 import hashlib
@@ -1133,6 +1134,47 @@ def search_steam_for_game(game_name):
         game_match = game_results[0]
 
     return game_match
+
+
+def get_free_to_keep_games():
+    # URL for free deals on GG.deals
+    url = "https://gg.deals/deals/pc/?minDiscount=100&minRating=0"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.5938.132 Safari/537.36"
+    }
+
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        log(f"Error! Failed to get free games from GG.deals. Response: {response.text}")
+        return []
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    games = soup.find_all("div", class_="game-item-v2")
+
+    free_games = []
+    for game in games:
+        game_name = game.find("a", class_="game-info-title").text.strip()
+
+        shop_name = game.get("data-shop-name")
+
+        deal_end_time = game.find("time", class_="timesince")
+        deal_end_time = deal_end_time["datetime"] if deal_end_time else ""
+
+        shop_link = "https://gg.deals" + game.find("a", class_="shop-link")["href"] if game.find("a", class_="shop-link") else ""
+
+        deal_path = game.find("a", class_="game-info-title")["href"]
+        deal_type = deal_path.split("/")[1]
+
+        free_game = FreeGameDeal()
+        free_game.deal_id = deal_path
+        free_game.game_name = game_name
+        free_game.shop_name = shop_name
+        free_game.expiry_datetime = deal_end_time
+        free_game.url = shop_link
+        free_game.type = deal_type
+        free_games.append(free_game)
+
+    return free_games
 
 
 async def notify_users_free_to_keep_game(free_game: FreeGameDeal):

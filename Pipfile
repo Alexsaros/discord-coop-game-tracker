@@ -11,6 +11,7 @@ requests = "*"
 flask = "*"
 PyNaCl = "*"
 python-dateutil = "*"
+beautifulsoup4 = "*"
 
 [requires]
 python_version = "3.*"
