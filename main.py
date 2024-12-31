@@ -1136,7 +1136,7 @@ def search_steam_for_game(game_name):
     return game_match
 
 
-def get_free_to_keep_games():
+def get_free_to_keep_games() -> dict[str, str]:
     # URL for free deals on GG.deals
     url = "https://gg.deals/deals/pc/?minDiscount=100&minRating=0"
     headers = {
@@ -1144,14 +1144,16 @@ def get_free_to_keep_games():
     }
 
     response = requests.get(url, headers=headers)
-    if response.status_code != 200:
-        log(f"Error! Failed to get free games from GG.deals. Response: {response.text}")
-        return []
+    try:
+        response.raise_for_status()
+    except Exception as e:
+        log(f"Error! Failed to get free-to-keep games from GG.deals. {e}")
+        return {}
 
     soup = BeautifulSoup(response.text, "html.parser")
     games = soup.find_all("div", class_="game-item-v2")
 
-    free_games = []
+    free_games = {}
     for game in games:
         game_name = game.find("a", class_="game-info-title").text.strip()
 
@@ -1172,7 +1174,8 @@ def get_free_to_keep_games():
         free_game.expiry_datetime = deal_end_time
         free_game.url = shop_link
         free_game.type = deal_type
-        free_games.append(free_game)
+
+        free_games[free_game.deal_id] = free_game.to_json()
 
     return free_games
 
@@ -1187,7 +1190,7 @@ async def notify_users_free_to_keep_game(free_game: FreeGameDeal):
         await user.send(formatted_message)
 
 
-async def check_free_to_keep_games():
+async def check_itad_for_free_to_keep_games():
     itad_deals_endpoint = "https://api.isthereanydeal.com/deals/v2"
     params = {
         "key": ITAD_API_KEY,
@@ -1227,6 +1230,26 @@ async def check_free_to_keep_games():
         # If this deal is new, send a message to users who want to be notified
         if free_game.deal_id not in old_deals.keys():
             await notify_users_free_to_keep_game(free_game)
+
+    # Save the deals we just retrieved
+    with open(FREE_TO_KEEP_GAMES_FILE, "w") as file:
+        json.dump(new_deals, file, indent=4)
+
+
+async def check_free_to_keep_games(wait=True):
+    # Potentially wait up to 1 hour before scraping, to simulate human randomness
+    if wait:
+        wait_time = random.randint(0, 3600)
+        time.sleep(wait_time)
+
+    # Get the deals that we've already gotten earlier
+    old_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)     # type: dict[str, int, dict]
+
+    new_deals = get_free_to_keep_games()
+    for new_deal in new_deals.keys():
+        # If this deal is new, send a message to users who want to be notified
+        if new_deal not in old_deals.keys():
+            await notify_users_free_to_keep_game(FreeGameDeal(json_data=new_deals[new_deal]))
 
     # Save the deals we just retrieved
     with open(FREE_TO_KEEP_GAMES_FILE, "w") as file:
@@ -1282,12 +1305,12 @@ async def on_ready():
     # Checks Steam and displays the updated prices
     await update_dataset_steam_prices()
     # Check any free-to-keep games
-    await check_free_to_keep_games()
+    await check_free_to_keep_games(wait=False)
 
     # Create a job to update the prices every 6 hours
     scheduler.add_job(update_dataset_steam_prices, CronTrigger(hour="0,6,12,18"))
     # Create a job to check for new free-to-keep every 6 hours
-    scheduler.add_job(check_free_to_keep_games, CronTrigger(hour="1,7,13,19"))
+    scheduler.add_job(check_free_to_keep_games, CronTrigger(hour="7,19"))
     # Create a job that makes a backup of the dataset every 12 hours
     scheduler.add_job(create_backup, CronTrigger(hour="2,14"))
 
