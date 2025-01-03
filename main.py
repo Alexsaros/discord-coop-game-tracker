@@ -280,7 +280,7 @@ class CustomHelpCommand(commands.DefaultHelpCommand):
             channel = self.get_destination()
             message = await channel.send(spooky_message)
             log(f"Sent spooky message: {spooky_message}")
-            time.sleep(2.5)
+            await asyncio.sleep(2.5)
             await message.delete()
 
         # Send the actual help message
@@ -1240,7 +1240,7 @@ async def check_free_to_keep_games(wait=True):
     # Potentially wait up to 1 hour before scraping, to simulate human randomness
     if wait:
         wait_time = random.randint(0, 3600)
-        time.sleep(wait_time)
+        await asyncio.sleep(wait_time)
 
     # Get the deals that we've already gotten earlier
     old_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)     # type: dict[str, int, dict]
