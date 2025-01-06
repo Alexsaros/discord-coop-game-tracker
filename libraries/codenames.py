@@ -491,6 +491,7 @@ class Game(BaseGameClass):
         user_name = await self.get_role_user_name(current_role)
         team_color = PLAYER_ROLE_TO_COLOR[current_role]
         self.history = f"{user_name} gave the {team_color} team a clue: **{clue}** **{number}**.\n"
+        self.history += f"Click an already guessed card to end your guessing.\n"
         self.clue_amount = number
         await self.next_turn()
 
@@ -498,9 +499,6 @@ class Game(BaseGameClass):
         if self.finished:
             raise CodenamesException("This game has already ended.")
         role = self.get_user_role(user_id)
-        card = self.get_card(word)
-        if card.tapped:
-            raise CodenamesException(f"This card (**{card.word}**) has already been guessed.")
         if role != self.turn_order[0]:
             raise CodenamesException("It is not your turn.")
 
@@ -508,9 +506,16 @@ class Game(BaseGameClass):
             # noinspection PyUnresolvedReferences
             await interaction.response.send_modal(self.ClueModal(self))
         else:
+            card = self.get_card(word)
+            user_name = await self.get_role_user_name(role)
+            if card.tapped:
+                # Interpret this as the player ending their turn
+                self.history += f"{user_name} finished guessing.\n"
+                await self.next_turn()
+                return
+
             card.tapped = True
             self.guess_count += 1
-            user_name = await self.get_role_user_name(role)
             card_emoji = CARD_TYPE_TO_EMOJI[card.type]
             self.history += f"{user_name} guessed **{card.word}{card_emoji}**.\n"
             if self.clue_amount != 0 and self.guess_count > self.clue_amount:
