@@ -625,14 +625,15 @@ class Game(BaseGameClass):
     async def send_new_messages_to_users(self):
         try:
             embed = await self.get_embed()
+            finished = self.is_game_finished()
 
             self.discord_messages = []
             for role, user_id in self.roles.items():
                 user = await get_discord_user(self.bot, user_id)
                 if role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
-                    message_object = await user.send(embed=embed, view=self.GameView(self, True))
+                    message_object = await user.send(embed=embed, view=self.GameView(self, True, finished))
                 else:
-                    message_object = await user.send(embed=embed, view=self.GameView(self, False))
+                    message_object = await user.send(embed=embed, view=self.GameView(self, False, finished))
                 self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
             self.save_to_file()
         except Exception as e:
@@ -640,6 +641,7 @@ class Game(BaseGameClass):
 
     async def update_messages(self):
         embed = await self.get_embed()
+        finished = self.is_game_finished()
         for discord_message in self.discord_messages:
             channel_object = discord_message.get_channel_object()   # type: DMChannel
             user_id = channel_object.recipient.id
@@ -647,19 +649,19 @@ class Game(BaseGameClass):
             role = self.get_user_role(user_id)
             message_object = await discord_message.get_message()
             if role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
-                await message_object.edit(embed=embed, view=self.GameView(self, True))
+                await message_object.edit(embed=embed, view=self.GameView(self, True, finished))
             else:
-                await message_object.edit(embed=embed, view=self.GameView(self, False))
+                await message_object.edit(embed=embed, view=self.GameView(self, False, finished))
         self.save_to_file()
 
     class GameView(View):
 
-        def __init__(self, game, spymaster: bool):
+        def __init__(self, game, spymaster: bool, finished: bool):
             super().__init__()
             self.game = game    # type: Game
             self.spymaster = spymaster
 
-            if self.spymaster:
+            if self.spymaster or finished:
                 len(self.game.cards)
                 for card in self.game.cards:
                     button_color = CARD_TYPE_TO_BUTTON_COLOR[card.type]
@@ -669,7 +671,7 @@ class Game(BaseGameClass):
                         emoji = CARD_TYPE_TO_EMOJI[CardType.ASSASSIN]
                     # If a card is tapped, change it to show just an emoji
                     if card.tapped:
-                        word = ""
+                        word = (self.game.max_word_length - 1) * "_"
                         emoji = CARD_TYPE_TO_EMOJI[card.type]
                     self.add_item(Button(style=button_color, label=word, custom_id=card.word, emoji=emoji))
             else:
@@ -680,7 +682,7 @@ class Game(BaseGameClass):
                     emoji = None
                     # If a card is tapped, change it to show just an emoji
                     if card.tapped:
-                        word = ""
+                        word = (self.game.max_word_length - 2) * "_"
                         emoji = CARD_TYPE_TO_EMOJI[card.type]
                     self.add_item(Button(style=button_color, label=word, custom_id=card.word, emoji=emoji))
 
