@@ -311,6 +311,18 @@ class GameSetup(BaseGameClass):
         self.save_to_file()
         return message_object
 
+    async def send_new_user_messages(self, user_ids: list[int]):
+        try:
+            embed = await self.get_embed()
+            self.discord_messages = []
+            for user_id in user_ids:
+                user = await get_discord_user(self.bot, user_id)
+                message_object = await user.send(embed=embed, view=self.view)    # type: discord.Message
+                self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
+            self.save_to_file()
+        except Exception as e:
+            await send_error_message(self.bot, e)
+
     async def update_messages(self):
         embed = await self.get_embed()
         for discord_message in self.discord_messages:
@@ -496,8 +508,15 @@ class Game(BaseGameClass):
         await self.next_turn()
 
     async def choose_word(self, word, user_id, interaction: Interaction):
+        card = self.get_card(word)
         if self.finished:
-            raise CodenamesException("This game has already ended.")
+            if card.type != CardType.ASSASSIN:
+                raise CodenamesException("This game has already ended. If you would like a rematch, click the assassin card.")
+            else:
+                game_setup = GameSetup(self.bot)
+                user_ids = list(self.roles.values())
+                await game_setup.send_new_user_messages(user_ids)
+                return
         role = self.get_user_role(user_id)
         if role != self.turn_order[0]:
             raise CodenamesException("It is not your turn.")
@@ -506,7 +525,6 @@ class Game(BaseGameClass):
             # noinspection PyUnresolvedReferences
             await interaction.response.send_modal(self.ClueModal(self))
         else:
-            card = self.get_card(word)
             user_name = await self.get_role_user_name(role)
             if card.tapped:
                 # Interpret this as the player ending their turn
