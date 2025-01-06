@@ -311,9 +311,12 @@ class GameSetup(BaseGameClass):
         self.save_to_file()
         return message_object
 
-    async def send_new_user_messages(self, user_ids: list[int]):
+    async def send_new_user_messages(self, user_ids: list[int], name=""):
         try:
-            embed = await self.get_embed()
+            if name:
+                embed = await self.get_embed(f"{name} has requested a rematch.")
+            else:
+                embed = await self.get_embed()
             self.discord_messages = []
             for user_id in user_ids:
                 user = await get_discord_user(self.bot, user_id)
@@ -348,10 +351,10 @@ class GameSetup(BaseGameClass):
             return ""
         return await get_user_name(self.bot, user_id)
 
-    async def get_embed(self):
+    async def get_embed(self, description="Choose a role."):
         embed = discord.Embed(
             title="Codenames",
-            description="Choose a role.",
+            description=description,
             color=discord.Color.dark_green()
         )
         embed.add_field(name="Red Spymaster", value=await self.get_role_user(PlayerRole.RED_SPYMASTER), inline=True)
@@ -515,7 +518,8 @@ class Game(BaseGameClass):
             else:
                 game_setup = GameSetup(self.bot)
                 user_ids = list(self.roles.values())
-                await game_setup.send_new_user_messages(user_ids)
+                user_name = (await get_discord_user(self.bot, user_id)).global_name
+                await game_setup.send_new_user_messages(user_ids, user_name)
                 return
         role = self.get_user_role(user_id)
         if role != self.turn_order[0]:
