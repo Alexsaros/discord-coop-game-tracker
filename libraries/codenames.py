@@ -114,6 +114,11 @@ class Card:
         self.type = json_data["type"]
         self.tapped = json_data["tapped"]
 
+    def get_word_formatted(self, length: int):
+        remaining_length = int((length - len(self.word))/2)
+        word = "_" * remaining_length + self.word + "_" * remaining_length
+        return word
+
     def to_dict(self):
         return {
             "word": self.word,
@@ -399,6 +404,7 @@ class Game(BaseGameClass):
         self.guess_count = 0
         self.clue_word = ""
         self.clue_amount = 0
+        self.max_word_length = self.get_max_word_length()
 
     def load_json(self, json_data):
         self.roles = json_data["roles"]
@@ -407,6 +413,7 @@ class Game(BaseGameClass):
         self.turn_order = json_data["turn_order"]
         self.cards = json_data["cards"]
         self.guess_count = json_data["guess_count"]
+        self.max_word_length = self.get_max_word_length()
 
     def to_dict(self):
         return {
@@ -418,6 +425,13 @@ class Game(BaseGameClass):
             "cards": [card.to_dict() for card in self.cards],
             "guess_count": self.guess_count,
         }
+
+    def get_max_word_length(self):
+        max_word_length = 0
+        for card in self.cards:
+            if len(card.word) > max_word_length:
+                max_word_length = len(card.word)
+        return max_word_length
 
     def generate_cards(self):
         words = random.sample(get_words(), 25)
@@ -644,7 +658,7 @@ class Game(BaseGameClass):
                 len(self.game.cards)
                 for card in self.game.cards:
                     button_color = CARD_TYPE_TO_BUTTON_COLOR[card.type]
-                    word = card.word
+                    word = card.get_word_formatted(self.game.max_word_length)
                     emoji = None
                     if card.type == CardType.ASSASSIN:
                         emoji = CARD_TYPE_TO_EMOJI[CardType.ASSASSIN]
@@ -657,7 +671,7 @@ class Game(BaseGameClass):
                 for card in self.game.cards:
                     card_type = card.type if card.tapped else CardType.NEUTRAL
                     button_color = CARD_TYPE_TO_BUTTON_COLOR[card_type]
-                    word = card.word
+                    word = card.get_word_formatted(self.game.max_word_length)
                     emoji = None
                     # If a card is tapped, change it to show just an emoji
                     if card.tapped:
