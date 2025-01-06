@@ -91,10 +91,10 @@ CARD_TYPE_TO_BUTTON_COLOR = {
 }
 
 CARD_TYPE_TO_EMOJI = {
-    CardType.NEUTRAL: ":white_large_square:",
-    CardType.RED: ":red_square:",
-    CardType.BLUE: ":blue_square:",
-    CardType.ASSASSIN: ":skull:",
+    CardType.NEUTRAL: "⬜",
+    CardType.RED: "🟥",
+    CardType.BLUE: "🟦",
+    CardType.ASSASSIN: "💀",
 }
 
 
@@ -133,6 +133,14 @@ class PlayerRole:
 class TeamColor:
     RED = "red"
     BLUE = "blue"
+
+
+PLAYER_ROLE_TO_COLOR = {
+    PlayerRole.RED_SPYMASTER: TeamColor.RED,
+    PlayerRole.RED_OPERATIVE: TeamColor.RED,
+    PlayerRole.BLUE_SPYMASTER: TeamColor.BLUE,
+    PlayerRole.BLUE_OPERATIVE: TeamColor.BLUE,
+}
 
 
 PLAYER_ROLES = vars(PlayerRole).values()
@@ -467,7 +475,8 @@ class Game(BaseGameClass):
 
         current_role = self.turn_order[0]
         user_name = await self.get_role_user_name(current_role)
-        self.history = f"{user_name} gave the clue: **{clue}** **{number}**.\n"
+        team_color = PLAYER_ROLE_TO_COLOR[current_role]
+        self.history = f"{user_name} gave the {team_color} team a clue: **{clue}** **{number}**.\n"
         self.clue_amount = number
         await self.next_turn()
 
@@ -475,6 +484,9 @@ class Game(BaseGameClass):
         if self.finished:
             raise CodenamesException("This game has already ended.")
         role = self.get_user_role(user_id)
+        card = self.get_card(word)
+        if card.tapped:
+            raise CodenamesException(f"This card (**{card.word}**) has already been guessed.")
         if role != self.turn_order[0]:
             raise CodenamesException("It is not your turn.")
 
@@ -482,7 +494,6 @@ class Game(BaseGameClass):
             # noinspection PyUnresolvedReferences
             await interaction.response.send_modal(self.ClueModal(self))
         else:
-            card = self.get_card(word)
             card.tapped = True
             self.guess_count += 1
             user_name = await self.get_role_user_name(role)
@@ -560,7 +571,8 @@ class Game(BaseGameClass):
         if current_role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
             # Create a new history for the new messages
             current_user_name = await self.get_role_user_name(current_role)
-            self.history = f"{current_user_name} is thinking of a clue...\n"
+            team_color = PLAYER_ROLE_TO_COLOR[current_role]
+            self.history = f"{current_user_name} is thinking of a clue for the {team_color} team...\n"
 
             await self.send_new_messages_to_users()
 
@@ -635,17 +647,23 @@ class Game(BaseGameClass):
                     word = card.word
                     emoji = None
                     if card.type == CardType.ASSASSIN:
-                        emoji = "💀"
-                    self.add_item(Button(style=button_color, label=word, custom_id=card.word, disabled=card.tapped, emoji=emoji))
+                        emoji = CARD_TYPE_TO_EMOJI[CardType.ASSASSIN]
+                    # If a card is tapped, change it to show just an emoji
+                    if card.tapped:
+                        word = ""
+                        emoji = CARD_TYPE_TO_EMOJI[card.type]
+                    self.add_item(Button(style=button_color, label=word, custom_id=card.word, emoji=emoji))
             else:
                 for card in self.game.cards:
                     card_type = card.type if card.tapped else CardType.NEUTRAL
                     button_color = CARD_TYPE_TO_BUTTON_COLOR[card_type]
                     word = card.word
                     emoji = None
-                    if card.type == CardType.ASSASSIN and card.tapped:
-                        emoji = "💀"
-                    self.add_item(Button(style=button_color, label=word, custom_id=card.word, disabled=card.tapped, emoji=emoji))
+                    # If a card is tapped, change it to show just an emoji
+                    if card.tapped:
+                        word = ""
+                        emoji = CARD_TYPE_TO_EMOJI[card.type]
+                    self.add_item(Button(style=button_color, label=word, custom_id=card.word, emoji=emoji))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
