@@ -23,6 +23,7 @@ import random
 import hmac
 import hashlib
 
+from libraries import codenames
 
 load_dotenv()
 APP_ID = os.getenv("APP_ID")
@@ -2363,6 +2364,17 @@ async def eight_ball(ctx):
     ]
     answer = f"The Magic 8 Ball says: *{random.choice(answers)}*."
     await ctx.send(answer)
+
+
+@bot.command(name="codenames", help="Start a Codenames game.")
+async def start_codenames(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+
+    await codenames.create_new_game(ctx)
+    try:
+        await ctx.message.delete()
+    except discord.Forbidden:
+        pass
 
 
 @bot.event
