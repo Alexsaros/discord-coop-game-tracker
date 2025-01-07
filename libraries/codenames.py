@@ -645,12 +645,19 @@ class Game(BaseGameClass):
             description=self.history[role],
             color=discord.Color.dark_green()
         )
-        embed.add_field(name="Red Spymaster", value=await self.get_role_user_name(PlayerRole.RED_SPYMASTER), inline=True)
+        current_role_turn = self.turn_order[0]
+        # Show who's turn it is with an emoji
+        rs_turn = " :arrow_left:" if current_role_turn == PlayerRole.RED_SPYMASTER else ""
+        bs_turn = " :arrow_left:" if current_role_turn == PlayerRole.BLUE_SPYMASTER else ""
+        ro_turn = " :arrow_left:" if current_role_turn == PlayerRole.RED_OPERATIVE else ""
+        bo_turn = " :arrow_left:" if current_role_turn == PlayerRole.BLUE_OPERATIVE else ""
+
+        embed.add_field(name="Red Spymaster", value=await self.get_role_user_name(PlayerRole.RED_SPYMASTER) + rs_turn, inline=True)
         embed.add_field(name="Cards left", value=self.get_cards_left_string(), inline=True)
-        embed.add_field(name="Blue Spymaster", value=await self.get_role_user_name(PlayerRole.BLUE_SPYMASTER), inline=True)
-        embed.add_field(name="Red Operative", value=await self.get_role_user_name(PlayerRole.RED_OPERATIVE), inline=True)
+        embed.add_field(name="Blue Spymaster", value=await self.get_role_user_name(PlayerRole.BLUE_SPYMASTER) + bs_turn, inline=True)
+        embed.add_field(name="Red Operative", value=await self.get_role_user_name(PlayerRole.RED_OPERATIVE) + ro_turn, inline=True)
         embed.add_field(name="", value="", inline=True)
-        embed.add_field(name="Blue Operative", value=await self.get_role_user_name(PlayerRole.BLUE_OPERATIVE), inline=True)
+        embed.add_field(name="Blue Operative", value=await self.get_role_user_name(PlayerRole.BLUE_OPERATIVE) + bo_turn, inline=True)
         return embed
 
     async def send_new_messages_to_users(self):
