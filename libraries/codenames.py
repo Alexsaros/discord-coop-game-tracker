@@ -338,7 +338,7 @@ class GameSetup(BaseGameClass):
             raise CodenamesException("Not enough players to start the game!")
         self.distribute_random_players()
         game = Game(self)
-        await game.send_new_messages_to_users()
+        await game.send_new_messages_to_all_users()
         self.remove_from_file()
         await self.delete_messages()
 
@@ -637,13 +637,7 @@ class Game(BaseGameClass):
         # Move the first item to the end of the list
         self.turn_order.append(self.turn_order.pop(0))
 
-        current_role = self.turn_order[0]
-        if current_role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
-            current_user_name = await self.get_role_user_name(current_role)
-            team_color = PLAYER_ROLE_TO_COLOR[current_role]
-            self.add_history(f"{current_user_name} is thinking of a clue for the {team_color} team...")
-
-            await self.send_new_messages_to_users()
+        await self.send_new_messages_to_all_users()
 
     def get_cards_left_string(self):
         if self.starting_team == TeamColor.RED:
@@ -679,12 +673,13 @@ class Game(BaseGameClass):
         embed.add_field(name="Blue Operative", value=await self.get_role_user_name(PlayerRole.BLUE_OPERATIVE) + bo_turn, inline=True)
         return embed
 
-    async def send_new_messages_to_users(self):
+    async def send_new_messages_to_all_users(self):
         try:
             finished = self.is_game_finished()
 
             self.discord_messages = []
             for role, user_id in self.roles.items():
+                self.history[role] = []
                 embed = await self.get_embed(role)
                 user = await get_discord_user(self.bot, user_id)
                 if role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
