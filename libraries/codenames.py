@@ -535,7 +535,6 @@ class Game(BaseGameClass):
         user_name = await self.get_role_user_name(current_role)
         team_color = PLAYER_ROLE_TO_COLOR[current_role]
         self.add_history(f"{user_name} gave the {team_color} team a clue: **{clue}** **{number}**.")
-        self.add_history(f"Click an already guessed card to end your guessing.")
         self.clue_amount = number
         await self.next_turn()
 
