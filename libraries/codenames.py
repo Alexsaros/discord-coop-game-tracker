@@ -497,6 +497,7 @@ class Game(BaseGameClass):
                 return card
 
     async def give_clue(self, clue, number):
+        clue = clue.upper()
         try:
             number = int(number)
         except ValueError:
