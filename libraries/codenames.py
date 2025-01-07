@@ -492,21 +492,22 @@ class Game(BaseGameClass):
 
     async def get_history_for_role(self, role):
         history = self.history[role].copy()
+        if self.is_game_finished():
+            return "\n".join(history)
 
         current_role = self.turn_order[0]
         current_color = PLAYER_ROLE_TO_COLOR[current_role]
         current_player = await self.get_role_user_name(current_role)
-        for role in self.history.keys():
-            if current_role == role:
-                if current_role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
-                    history.append(f"Please think of a clue for the {current_color} team. Click any card when you are ready to enter the clue.")
-                else:
-                    history.append(f"Please choose cards matching the given clue. Click on any card that has already been revealed to end your turn.")
+        if current_role == role:
+            if current_role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
+                history.append(f"Please think of a clue for the {current_color} team. Click any card when you are ready to enter the clue.")
             else:
-                if current_role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
-                    history.append(f"{current_player} is currently thinking of a clue for the {current_color} team...")
-                else:
-                    history.append(f"{current_player} is currently choosing cards for the {current_color} team...")
+                history.append(f"Please choose cards matching the given clue. Click on any card that has already been revealed to end your turn.")
+        else:
+            if current_role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
+                history.append(f"{current_player} is currently thinking of a clue for the {current_color} team...")
+            else:
+                history.append(f"{current_player} is currently choosing cards for the {current_color} team...")
         return "\n".join(history)
 
     async def get_role_user_name(self, role):
