@@ -411,7 +411,12 @@ class Game(BaseGameClass):
 
         self.roles = game_setup.roles   # type: dict[str, int]
 
-        self.history = ""
+        self.history = {
+            PlayerRole.RED_SPYMASTER: "",
+            PlayerRole.RED_OPERATIVE: "",
+            PlayerRole.BLUE_SPYMASTER: "",
+            PlayerRole.BLUE_OPERATIVE: "",
+        }
         self.starting_team = random.choice([TeamColor.RED, TeamColor.BLUE])
 
         self.turn_order = self.determine_turn_order()
@@ -481,6 +486,10 @@ class Game(BaseGameClass):
         else:
             return [PlayerRole.BLUE_SPYMASTER, PlayerRole.BLUE_OPERATIVE, PlayerRole.RED_SPYMASTER, PlayerRole.RED_OPERATIVE]
 
+    def add_history(self, line):
+        for role in self.history.keys():
+            self.history[role] += "\n" + line
+
     async def get_role_user_name(self, role):
         user_id = self.roles[role]
         return (await get_discord_user(self.bot, user_id)).global_name
@@ -506,8 +515,8 @@ class Game(BaseGameClass):
         current_role = self.turn_order[0]
         user_name = await self.get_role_user_name(current_role)
         team_color = PLAYER_ROLE_TO_COLOR[current_role]
-        self.history = f"{user_name} gave the {team_color} team a clue: **{clue}** **{number}**.\n"
-        self.history += f"Click an already guessed card to end your guessing.\n"
+        self.add_history(f"{user_name} gave the {team_color} team a clue: **{clue}** **{number}**.")
+        self.add_history(f"Click an already guessed card to end your guessing.")
         self.clue_amount = number
         await self.next_turn()
 
@@ -533,16 +542,16 @@ class Game(BaseGameClass):
             user_name = await self.get_role_user_name(role)
             if card.tapped:
                 # Interpret this as the player ending their turn
-                self.history += f"{user_name} finished guessing.\n"
+                self.add_history(f"{user_name} finished guessing.")
                 await self.next_turn()
                 return
 
             card.tapped = True
             self.guess_count += 1
             card_emoji = CARD_TYPE_TO_EMOJI[card.type]
-            self.history += f"{user_name} guessed **{card.word}{card_emoji}**.\n"
+            self.add_history(f"{user_name} guessed **{card.word}{card_emoji}**.")
             if self.clue_amount != 0 and self.guess_count > self.clue_amount:
-                self.history += f"Reached maximum amount of guesses for this turn.\n"
+                self.add_history(f"Reached maximum amount of guesses for this turn.")
                 await self.next_turn()
             elif role == PlayerRole.RED_OPERATIVE and card.type == CardType.RED:
                 if self.is_game_finished():
@@ -575,24 +584,24 @@ class Game(BaseGameClass):
                 elif card.type == CardType.ASSASSIN:
                     current_role = self.turn_order[0]
                     if current_role == PlayerRole.RED_OPERATIVE:
-                        self.history += f"The red team picked the assassin, so the blue team wins.\n"
+                        self.add_history(f"The red team picked the assassin, so the blue team wins.")
                     else:
-                        self.history += f"The blue team picked the assassin, so the red team wins.\n"
+                        self.add_history(f"The blue team picked the assassin, so the red team wins.")
                     return True
 
         if self.starting_team == TeamColor.RED:
             if guessed_red == 9:
-                self.history += f"All the red cards have been guessed, so the red team wins.\n"
+                self.add_history(f"All the red cards have been guessed, so the red team wins.")
                 return True
             elif guessed_blue == 8:
-                self.history += f"All the blue cards have been guessed, so the blue team wins.\n"
+                self.add_history(f"All the blue cards have been guessed, so the blue team wins.")
                 return True
         else:
             if guessed_red == 8:
-                self.history += f"All the red cards have been guessed, so the red team wins.\n"
+                self.add_history(f"All the red cards have been guessed, so the red team wins.")
                 return True
             elif guessed_blue == 9:
-                self.history += f"All the blue cards have been guessed, so the blue team wins.\n"
+                self.add_history(f"All the blue cards have been guessed, so the blue team wins.")
                 return True
 
         return False
@@ -611,10 +620,9 @@ class Game(BaseGameClass):
 
         current_role = self.turn_order[0]
         if current_role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
-            # Create a new history for the new messages
             current_user_name = await self.get_role_user_name(current_role)
             team_color = PLAYER_ROLE_TO_COLOR[current_role]
-            self.history = f"{current_user_name} is thinking of a clue for the {team_color} team...\n"
+            self.add_history(f"{current_user_name} is thinking of a clue for the {team_color} team...")
 
             await self.send_new_messages_to_users()
 
@@ -631,10 +639,10 @@ class Game(BaseGameClass):
         remaining_blue_cards = total_cards_blue-chosen_blue_cards
         return f"{remaining_red_cards} - {remaining_blue_cards}"
 
-    async def get_embed(self):
+    async def get_embed(self, role):
         embed = discord.Embed(
             title="Codenames",
-            description=self.history,
+            description=self.history[role],
             color=discord.Color.dark_green()
         )
         embed.add_field(name="Red Spymaster", value=await self.get_role_user_name(PlayerRole.RED_SPYMASTER), inline=True)
@@ -647,11 +655,11 @@ class Game(BaseGameClass):
 
     async def send_new_messages_to_users(self):
         try:
-            embed = await self.get_embed()
             finished = self.is_game_finished()
 
             self.discord_messages = []
             for role, user_id in self.roles.items():
+                embed = await self.get_embed(role)
                 user = await get_discord_user(self.bot, user_id)
                 if role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
                     message_object = await user.send(embed=embed, view=self.GameView(self, True, finished))
@@ -663,13 +671,13 @@ class Game(BaseGameClass):
             await send_error_message(self.bot, e)
 
     async def update_messages(self):
-        embed = await self.get_embed()
         finished = self.is_game_finished()
         for discord_message in self.discord_messages:
             channel_object = discord_message.get_channel_object()   # type: DMChannel
             user_id = channel_object.recipient.id
 
             role = self.get_user_role(user_id)
+            embed = await self.get_embed(role)
             message_object = await discord_message.get_message()
             if role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
                 await message_object.edit(embed=embed, view=self.GameView(self, True, finished))
