@@ -525,8 +525,8 @@ class Game(BaseGameClass):
             if card.word == word:
                 return card
 
-    async def give_clue(self, clue, number):
-        clue = clue.upper()
+    async def give_clue(self, given_clue, number):
+        clue = given_clue.upper()
         try:
             number = int(number)
         except ValueError:
