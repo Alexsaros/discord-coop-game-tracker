@@ -368,7 +368,7 @@ class GameSetup(BaseGameClass):
     class GameSetupView(View):
 
         def __init__(self, game_setup):
-            super().__init__()
+            super().__init__(timeout=None)
             self.game_setup = game_setup    # type: GameSetup
 
             self.add_item(Button(style=ButtonStyle.red, label="Red Spymaster", custom_id=PlayerRole.RED_SPYMASTER))
@@ -709,7 +709,7 @@ class Game(BaseGameClass):
     class GameView(View):
 
         def __init__(self, game, spymaster: bool, finished: bool):
-            super().__init__()
+            super().__init__(timeout=None)
             self.game = game    # type: Game
             self.spymaster = spymaster
 
