@@ -1296,6 +1296,8 @@ async def on_connect():
     # Load scheduled jobs that were saved during earlier runs
     load_scheduler_jobs()
 
+    codenames.load_games(bot)
+
     log("Finished on_connect()")
 
 

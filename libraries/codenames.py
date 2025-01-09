@@ -67,6 +67,16 @@ def read_file_safe(filename):
     return file_data
 
 
+def load_games(bot: Bot):
+    game_info_dict = read_file_safe(GAME_INFO_FILE)
+    for game_uuid, game_info in game_info_dict.items():
+        if game_info["setup"]:
+            game_object = GameSetup(bot, json_data=game_info)
+            bot.add_view(game_object.view)
+        else:
+            game_object = Game(bot=bot, json_data=game_info)
+
+
 class CodenamesException(Exception):
 
     message = ""
@@ -402,8 +412,9 @@ async def create_new_game(ctx: Context):
 
 class Game(BaseGameClass):
 
-    def __init__(self, game_setup: GameSetup = None, json_data=None):
-        super().__init__(game_setup.bot)
+    def __init__(self, game_setup: GameSetup = None, bot: Bot = None, json_data=None):
+        bot = bot if bot else game_setup.bot
+        super().__init__(bot)
         self.finished = False
         if json_data:
             self.load_json(json_data)
@@ -432,6 +443,7 @@ class Game(BaseGameClass):
         self.starting_team = json_data["starting_team"]
         self.turn_order = json_data["turn_order"]
         self.cards = json_data["cards"]
+        self.cards = [Card(json_data=card) for card in json_data["cards"]]
         self.guess_count = json_data["guess_count"]
         self.max_word_length = self.get_max_word_length()
 
