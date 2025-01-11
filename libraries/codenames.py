@@ -550,7 +550,11 @@ class Game(BaseGameClass):
             if card.word == word:
                 return card
 
-    async def give_clue(self, given_clue, number):
+    async def give_clue(self, user_id, given_clue, number):
+        role = self.get_user_role(user_id)
+        if role != self.turn_order[0]:
+            raise CodenamesException("It is not your turn.")
+
         clue = given_clue.upper()
         try:
             number = int(number)
@@ -790,7 +794,8 @@ class Game(BaseGameClass):
 
         async def on_submit(self, interaction: discord.Interaction):
             try:
-                await self.game.give_clue(self.clue.value, self.number.value)
+                user_id = interaction.user.id
+                await self.game.give_clue(user_id, self.clue.value, self.number.value)
                 # noinspection PyUnresolvedReferences
                 await interaction.response.defer()
             except CodenamesException as e:
