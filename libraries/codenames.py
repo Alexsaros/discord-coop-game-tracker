@@ -595,6 +595,10 @@ class Game(BaseGameClass):
             card_emoji = CARD_TYPE_TO_EMOJI[card.type]
             self.add_history(f"{user_name} guessed **{card.word}{card_emoji}**.")
             if self.clue_amount != 0 and self.guess_count > self.clue_amount:
+                if self.is_game_finished():
+                    self.end_game()
+                    await self.update_messages()
+                    return
                 self.add_history(f"Reached maximum amount of guesses for this turn.")
                 await self.next_turn()
             elif role == PlayerRole.RED_OPERATIVE and card.type == CardType.RED:
