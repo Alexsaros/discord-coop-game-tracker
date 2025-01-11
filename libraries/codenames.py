@@ -517,7 +517,7 @@ class Game(BaseGameClass):
 
     async def get_history_for_role(self, role, last_message):
         history = self.history[role].copy()
-        if self.is_game_finished() or last_message:
+        if self.is_game_finished(add_history=False) or last_message:
             return "\n".join(history)
 
         current_role = self.turn_order[0]
@@ -616,7 +616,7 @@ class Game(BaseGameClass):
                     return
                 await self.next_turn()
 
-    def is_game_finished(self):
+    def is_game_finished(self, add_history=True):
         guessed_red = 0
         guessed_blue = 0
         for card in self.cards:
@@ -627,25 +627,30 @@ class Game(BaseGameClass):
                     guessed_blue += 1
                 elif card.type == CardType.ASSASSIN:
                     current_role = self.turn_order[0]
-                    if current_role == PlayerRole.RED_OPERATIVE:
-                        self.add_history(f"The red team picked the assassin, so the blue team wins.")
-                    else:
-                        self.add_history(f"The blue team picked the assassin, so the red team wins.")
+                    if add_history:
+                        if current_role == PlayerRole.RED_OPERATIVE:
+                            self.add_history(f"The red team picked the assassin, so the blue team wins.")
+                        else:
+                            self.add_history(f"The blue team picked the assassin, so the red team wins.")
                     return True
 
         if self.starting_team == TeamColor.RED:
             if guessed_red == 9:
-                self.add_history(f"All the red cards have been guessed, so the red team wins.")
+                if add_history:
+                    self.add_history(f"All the red cards have been guessed, so the red team wins.")
                 return True
             elif guessed_blue == 8:
-                self.add_history(f"All the blue cards have been guessed, so the blue team wins.")
+                if add_history:
+                    self.add_history(f"All the blue cards have been guessed, so the blue team wins.")
                 return True
         else:
             if guessed_red == 8:
-                self.add_history(f"All the red cards have been guessed, so the red team wins.")
+                if add_history:
+                    self.add_history(f"All the red cards have been guessed, so the red team wins.")
                 return True
             elif guessed_blue == 9:
-                self.add_history(f"All the blue cards have been guessed, so the blue team wins.")
+                if add_history:
+                    self.add_history(f"All the blue cards have been guessed, so the blue team wins.")
                 return True
 
         return False
@@ -701,8 +706,6 @@ class Game(BaseGameClass):
 
     async def send_new_messages_to_all_users(self):
         try:
-            finished = self.is_game_finished()
-
             self.discord_messages = []
             for role, user_id in self.roles.items():
                 self.history[role] = []
@@ -715,7 +718,6 @@ class Game(BaseGameClass):
             await send_error_message(self.bot, e)
 
     async def update_messages(self, last_message=False):
-        finished = self.is_game_finished()
         for discord_message in self.discord_messages:
             channel_object = discord_message.get_channel_object()   # type: DMChannel
             user_id = channel_object.recipient.id
