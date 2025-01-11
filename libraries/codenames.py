@@ -72,7 +72,6 @@ def load_games(bot: Bot):
     for game_uuid, game_info in game_info_dict.items():
         if game_info["setup"]:
             game_object = GameSetup(bot, json_data=game_info)
-            bot.add_view(game_object.view)
         else:
             game_object = Game(bot=bot, json_data=game_info)
 
@@ -242,14 +241,15 @@ class GameSetup(BaseGameClass):
 
     def __init__(self, bot: Bot, json_data=None):
         super().__init__(bot)
-        self.view = self.GameSetupView(self)
-
         if json_data is not None:
             self.load_json(json_data)
+            for prefix in self.message_custom_id_prefixes:
+                self.bot.add_view(self.GameSetupView(self, prefix))
             return
 
         # Info referencing the messages that are displaying this object
         self.discord_messages = []   # type: list[DiscordMessage]
+        self.message_custom_id_prefixes = []
 
         # The user ID of each player and what role they picked
         self.roles = {
@@ -263,6 +263,7 @@ class GameSetup(BaseGameClass):
     def load_json(self, json_data):
         self.uuid = json_data["uuid"]
         self.discord_messages = [DiscordMessage(self.bot, json_data=msg) for msg in json_data["discord_messages"]]
+        self.message_custom_id_prefixes = [prefix for prefix in json_data["message_custom_id_prefixes"]]
         self.roles = json_data["roles"]
         self.random_role = json_data["random_role"]
 
@@ -271,6 +272,7 @@ class GameSetup(BaseGameClass):
             "setup": True,
             "uuid": self.uuid,
             "discord_messages": [msg.to_dict() for msg in self.discord_messages],
+            "message_custom_id_prefixes": [prefix for prefix in self.message_custom_id_prefixes],
             "roles": self.roles,
             "random_role": self.random_role,
         }
@@ -316,7 +318,10 @@ class GameSetup(BaseGameClass):
 
     async def send_new_message(self, ctx: Context):
         embed = await self.get_embed()
-        message_object = await ctx.send(embed=embed, view=self.view)    # type: discord.Message
+        channel_id = ctx.channel.id
+        view = self.GameSetupView(self, channel_id)
+        self.message_custom_id_prefixes.append(channel_id)
+        message_object = await ctx.send(embed=embed, view=view)    # type: discord.Message
         self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
         self.save_to_file()
         return message_object
@@ -330,7 +335,9 @@ class GameSetup(BaseGameClass):
             self.discord_messages = []
             for user_id in user_ids:
                 user = await get_discord_user(self.bot, user_id)
-                message_object = await user.send(embed=embed, view=self.view)    # type: discord.Message
+                view = self.GameSetupView(self, user_id)
+                self.message_custom_id_prefixes.append(user_id)
+                message_object = await user.send(embed=embed, view=view)    # type: discord.Message
                 self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
             self.save_to_file()
         except Exception as e:
@@ -377,24 +384,23 @@ class GameSetup(BaseGameClass):
 
     class GameSetupView(View):
 
-        def __init__(self, game_setup):
+        def __init__(self, game_setup, prefix):
             super().__init__(timeout=None)
             self.game_setup = game_setup    # type: GameSetup
 
-            self.add_item(Button(style=ButtonStyle.red, label="Red Spymaster", custom_id=PlayerRole.RED_SPYMASTER))
-            self.add_item(Button(style=ButtonStyle.red, label="Red Operative", custom_id=PlayerRole.RED_OPERATIVE))
-            self.add_item(Button(style=ButtonStyle.gray, label="Random", custom_id=PlayerRole.RANDOM))
-            self.add_item(Button(style=ButtonStyle.blurple, label="Blue Spymaster", custom_id=PlayerRole.BLUE_SPYMASTER))
-            self.add_item(Button(style=ButtonStyle.blurple, label="Blue Operative", custom_id=PlayerRole.BLUE_OPERATIVE))
+            self.add_item(Button(style=ButtonStyle.red, label="Red Spymaster", custom_id=f"{self.game_setup.uuid}_{prefix}_{PlayerRole.RED_SPYMASTER}"))
+            self.add_item(Button(style=ButtonStyle.red, label="Red Operative", custom_id=f"{self.game_setup.uuid}_{prefix}_{PlayerRole.RED_OPERATIVE}"))
+            self.add_item(Button(style=ButtonStyle.gray, label="Random", custom_id=f"{self.game_setup.uuid}_{prefix}_{PlayerRole.RANDOM}"))
+            self.add_item(Button(style=ButtonStyle.blurple, label="Blue Spymaster", custom_id=f"{self.game_setup.uuid}_{prefix}_{PlayerRole.BLUE_SPYMASTER}"))
+            self.add_item(Button(style=ButtonStyle.blurple, label="Blue Operative", custom_id=f"{self.game_setup.uuid}_{prefix}_{PlayerRole.BLUE_OPERATIVE}"))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
                 user_id = interaction.user.id
-                button_id = interaction.data.get("custom_id")
-                if button_id in PLAYER_ROLES:
-                    await self.game_setup.join_role(button_id, user_id)
-                    # noinspection PyUnresolvedReferences
-                    await interaction.response.defer()
+                role = interaction.data.get("custom_id").split("_")[-1]
+                await self.game_setup.join_role(role, user_id)
+                # noinspection PyUnresolvedReferences
+                await interaction.response.defer()
             except CodenamesException as e:
                 # noinspection PyUnresolvedReferences
                 await interaction.response.send_message(str(e), ephemeral=True)
@@ -416,10 +422,13 @@ class Game(BaseGameClass):
         bot = bot if bot else game_setup.bot
         super().__init__(bot)
         self.finished = False
-        if json_data:
+        if json_data is not None:
             self.load_json(json_data)
+            for role in self.roles.keys():
+                self.bot.add_view(self.GameView(self, role))
             return
 
+        self.turn = 1
         self.roles = game_setup.roles   # type: dict[str, int]
 
         self.history = {
@@ -438,6 +447,8 @@ class Game(BaseGameClass):
         self.max_word_length = self.get_max_word_length()
 
     def load_json(self, json_data):
+        self.uuid = json_data.get("uuid")
+        self.turn = json_data.get("turn")
         self.roles = json_data["roles"]
         self.history = json_data["history"]
         self.starting_team = json_data["starting_team"]
@@ -450,6 +461,8 @@ class Game(BaseGameClass):
     def to_dict(self):
         return {
             "setup": False,
+            "uuid": self.uuid,
+            "turn": self.turn,
             "roles": self.roles,
             "history": self.history,
             "starting_team": self.starting_team,
@@ -648,6 +661,7 @@ class Game(BaseGameClass):
         self.guess_count = 0
         # Move the first item to the end of the list
         self.turn_order.append(self.turn_order.pop(0))
+        self.turn += 1
 
         await self.send_new_messages_to_all_users()
 
@@ -694,10 +708,7 @@ class Game(BaseGameClass):
                 self.history[role] = []
                 embed = await self.get_embed(role, last_message=False)
                 user = await get_discord_user(self.bot, user_id)
-                if role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
-                    message_object = await user.send(embed=embed, view=self.GameView(self, True, finished))
-                else:
-                    message_object = await user.send(embed=embed, view=self.GameView(self, False, finished))
+                message_object = await user.send(embed=embed, view=self.GameView(self, role))
                 self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
             self.save_to_file()
         except Exception as e:
@@ -712,21 +723,17 @@ class Game(BaseGameClass):
             role = self.get_user_role(user_id)
             embed = await self.get_embed(role, last_message=last_message)
             message_object = await discord_message.get_message()
-            if role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
-                await message_object.edit(embed=embed, view=self.GameView(self, True, finished))
-            else:
-                await message_object.edit(embed=embed, view=self.GameView(self, False, finished))
+            await message_object.edit(embed=embed, view=self.GameView(self, role))
         self.save_to_file()
 
     class GameView(View):
 
-        def __init__(self, game, spymaster: bool, finished: bool):
+        def __init__(self, game, role: str):
             super().__init__(timeout=None)
             self.game = game    # type: Game
-            self.spymaster = spymaster
+            self.role = role
 
-            if self.spymaster or finished:
-                len(self.game.cards)
+            if self.role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished:
                 for card in self.game.cards:
                     button_color = CARD_TYPE_TO_BUTTON_COLOR[card.type]
                     word = card.get_word_formatted(self.game.max_word_length)
@@ -737,7 +744,8 @@ class Game(BaseGameClass):
                     if card.tapped:
                         word = (self.game.max_word_length - 1) * "_"
                         emoji = CARD_TYPE_TO_EMOJI[card.type]
-                    self.add_item(Button(style=button_color, label=word, custom_id=card.word, emoji=emoji))
+                    custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_{card.word}"
+                    self.add_item(Button(style=button_color, label=word, custom_id=custom_id, emoji=emoji))
             else:
                 for card in self.game.cards:
                     card_type = card.type if card.tapped else CardType.NEUTRAL
@@ -748,12 +756,13 @@ class Game(BaseGameClass):
                     if card.tapped:
                         word = (self.game.max_word_length - 2) * "_"
                         emoji = CARD_TYPE_TO_EMOJI[card.type]
-                    self.add_item(Button(style=button_color, label=word, custom_id=card.word, emoji=emoji))
+                    custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_{card.word}"
+                    self.add_item(Button(style=button_color, label=word, custom_id=custom_id, emoji=emoji))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
                 user_id = interaction.user.id
-                word = interaction.data.get("custom_id")
+                word = interaction.data.get("custom_id").split("_")[-1]
                 await self.game.choose_word(word, user_id, interaction)
                 # noinspection PyUnresolvedReferences
                 await interaction.response.defer()
