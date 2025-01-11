@@ -794,12 +794,13 @@ class Game(BaseGameClass):
 
         async def on_submit(self, interaction: discord.Interaction):
             try:
-                user_id = interaction.user.id
-                await self.game.give_clue(user_id, self.clue.value, self.number.value)
                 # noinspection PyUnresolvedReferences
                 await interaction.response.defer()
+
+                user_id = interaction.user.id
+                await self.game.give_clue(user_id, self.clue.value, self.number.value)
             except CodenamesException as e:
                 # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(str(e), ephemeral=True)
+                await interaction.followup.send_message(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.game.bot, e)
