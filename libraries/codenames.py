@@ -667,6 +667,7 @@ class Game(BaseGameClass):
 
     def end_game(self):
         self.finished = True
+        self.add_history(f"The game has ended. Click the assassin card to request a rematch.")
         self.remove_from_file()
 
     async def next_turn(self):
