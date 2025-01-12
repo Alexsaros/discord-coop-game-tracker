@@ -590,6 +590,8 @@ class Game(BaseGameClass):
             user_name = await self.get_role_user_name(role)
             if card.tapped:
                 # Interpret this as the player ending their turn
+                if self.guess_count == 0:
+                    raise CodenamesException("You must choose at least one card each turn.")
                 self.add_history(f"{user_name} finished guessing.")
                 await self.next_turn()
                 return
