@@ -515,9 +515,9 @@ class Game(BaseGameClass):
         for role in self.history.keys():
             self.history[role].append(line)
 
-    async def get_history_for_role(self, role, last_message):
+    async def get_history_for_role(self, role, is_final_message_edit):
         history = self.history[role].copy()
-        if self.is_game_finished(add_history=False) or last_message:
+        if self.is_game_finished(add_history=False) or is_final_message_edit:
             return "\n".join(history)
 
         current_role = self.turn_order[0]
@@ -672,7 +672,7 @@ class Game(BaseGameClass):
 
     async def next_turn(self):
         # Make sure the current messages are up-to-date
-        await self.update_messages(last_message=True)
+        await self.update_messages(is_final_message_edit=True)
 
         self.guess_count = 0
         # Move the first item to the end of the list
@@ -694,10 +694,10 @@ class Game(BaseGameClass):
         remaining_blue_cards = total_cards_blue-chosen_blue_cards
         return f"{remaining_red_cards} - {remaining_blue_cards}"
 
-    async def get_embed(self, role, last_message):
+    async def get_embed(self, role, is_final_message_edit):
         embed = discord.Embed(
             title="Codenames",
-            description=await self.get_history_for_role(role, last_message),
+            description=await self.get_history_for_role(role, is_final_message_edit),
             color=discord.Color.dark_green()
         )
         current_role_turn = self.turn_order[0]
@@ -720,7 +720,7 @@ class Game(BaseGameClass):
             self.discord_messages = []
             for role, user_id in self.roles.items():
                 self.history[role] = []
-                embed = await self.get_embed(role, last_message=False)
+                embed = await self.get_embed(role, is_final_message_edit=False)
                 user = await get_discord_user(self.bot, user_id)
                 message_object = await user.send(embed=embed, view=self.GameView(self, role))
                 self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
@@ -728,13 +728,13 @@ class Game(BaseGameClass):
         except Exception as e:
             await send_error_message(self.bot, e)
 
-    async def update_messages(self, last_message=False):
+    async def update_messages(self, is_final_message_edit=False):
         for discord_message in self.discord_messages:
             channel_object = discord_message.get_channel_object()   # type: DMChannel
             user_id = channel_object.recipient.id
 
             role = self.get_user_role(user_id)
-            embed = await self.get_embed(role, last_message=last_message)
+            embed = await self.get_embed(role, is_final_message_edit=is_final_message_edit)
             message_object = await discord_message.get_message()
             await message_object.edit(embed=embed, view=self.GameView(self, role))
         self.save_to_file()
