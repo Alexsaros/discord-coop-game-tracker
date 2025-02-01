@@ -2368,6 +2368,26 @@ async def eight_ball(ctx):
     await ctx.send(answer)
 
 
+@bot.command(name="choose", help="Randomly chooses one of the given options. Example: !choose red green \"light blue\".")
+async def choose(ctx, *options):
+    log(f"{ctx.author}: {ctx.message.content}")
+
+    selected_option = random.choice(options)
+    options_string = ", ".join(options)
+    message_text = f"Possible options: {options_string}.\nChosen: **{selected_option}**."
+    message = await ctx.send(message_text)
+    await ctx.message.delete()
+
+    for option in options:
+        if option.lower().startswith("alex"):
+            if option == selected_option:
+                break
+            await asyncio.sleep(1)
+            message_text = f"Possible options: {options_string}.\nChosen: ~~*{selected_option}*~~ **{option}**! Congratulations, my creator! :tada:"
+            await message.edit(content=message_text)
+            break
+
+
 @bot.command(name="codenames", help="Start a Codenames game.")
 async def start_codenames(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
