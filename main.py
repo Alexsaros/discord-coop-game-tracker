@@ -2378,15 +2378,6 @@ async def choose(ctx, *options):
     message = await ctx.send(message_text)
     await ctx.message.delete()
 
-    for option in options:
-        if option.lower().startswith("alex"):
-            if option == selected_option:
-                break
-            await asyncio.sleep(1)
-            message_text = f"Possible options: {options_string}.\nChosen: ~~*{selected_option}*~~ **{option}**! Congratulations, my creator! :tada:"
-            await message.edit(content=message_text)
-            break
-
 
 @bot.command(name="codenames", help="Start a Codenames game.")
 async def start_codenames(ctx):
