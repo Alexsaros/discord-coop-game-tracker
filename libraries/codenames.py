@@ -894,8 +894,7 @@ class Game(BaseGameClass):
                 embed = await self.get_embed(role, is_final_message_edit=False)
                 user = await get_discord_user(self.bot, user_id)
                 is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
-                image = self.generate_image(is_spymaster)
-                file = discord.File(image, filename="codenames.png")
+                file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
                 message_object = await user.send(embed=embed, view=self.GameView(self, role), file=file)
                 self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
             self.save_to_file()
@@ -962,12 +961,17 @@ class Game(BaseGameClass):
                 user_name = (await get_discord_user(self.game.bot, user_id)).global_name
                 action = interaction.data.get("custom_id").split("_")[-1]
                 if action == "reveal-cards":
-                    pass
+                    role = self.game.get_user_role(user_id)
+                    is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished
+                    file = discord.File(self.game.generate_image(is_spymaster, reveal_covered=True), filename="codenames.png")
+                    await interaction.message.edit(attachments=[file])
                 elif action == "cover-cards":
-                    pass
+                    role = self.game.get_user_role(user_id)
+                    is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished
+                    file = discord.File(self.game.generate_image(is_spymaster, reveal_covered=False), filename="codenames.png")
+                    await interaction.message.edit(attachments=[file])
                 elif action == "enter-clue":
                     await interaction.response.send_modal(self.game.ClueModal(self.game))
-                    print("sent modal")
                 elif action == "rematch":
                     game_setup = GameSetup(self.game.bot)
                     user_ids = list(self.game.roles.values())
