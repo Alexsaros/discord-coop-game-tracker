@@ -851,7 +851,9 @@ class Game(BaseGameClass):
                 self.history[role] = []
                 embed = await self.get_embed(role, is_final_message_edit=False)
                 user = await get_discord_user(self.bot, user_id)
-                message_object = await user.send(embed=embed, view=self.GameView(self, role))
+                is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
+                file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
+                message_object = await user.send(embed=embed, view=self.GameView(self, role), file=file)
                 self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
             self.save_to_file()
         except Exception as e:
@@ -864,8 +866,10 @@ class Game(BaseGameClass):
 
             role = self.get_user_role(user_id)
             embed = await self.get_embed(role, is_final_message_edit=is_final_message_edit)
+            is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
+            file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
             message_object = await discord_message.get_message()
-            await message_object.edit(embed=embed, view=self.GameView(self, role))
+            await message_object.edit(embed=embed, view=self.GameView(self, role), attachments=[file])
         self.save_to_file()
 
     class GameView(View):
