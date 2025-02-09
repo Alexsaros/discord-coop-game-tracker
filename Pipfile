@@ -12,7 +12,7 @@ flask = "*"
 PyNaCl = "*"
 python-dateutil = "*"
 beautifulsoup4 = "*"
-PIL = "*"
+pillow = "*"
 
 [requires]
 python_version = "3.*"
