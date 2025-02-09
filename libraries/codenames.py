@@ -4,12 +4,13 @@ import random
 import traceback
 from abc import ABC, abstractmethod
 import uuid
+from io import BytesIO
 import discord
 from discord import ButtonStyle, DMChannel, ui, Interaction
 from discord.ext.commands import Bot, Context
 from discord.ui import View, Button, Modal
 from dotenv import load_dotenv
-
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 library_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -19,6 +20,17 @@ DEVELOPER_USER_ID = os.getenv("DEVELOPER_USER_ID")
 CODENAMES_WORDS_FILE = os.path.join(library_dir, "codenames_words.txt")
 MESSAGE_TO_GAME_MAPPING_FILE = os.path.join(library_dir, "message_to_game_mapping.json")
 GAME_INFO_FILE = os.path.join(library_dir, "game_info.json")
+
+# Values for visualizing the cards
+CARD_CORNER_RADIUS = 25
+CARD_BORDER_WIDTH = 4
+CARD_PADDING = 10
+TEXT_PADDING = 20
+BASE_FONT_SIZE = 28
+MIN_FONT_SIZE = 12
+CARD_SIZE = (200, 150)
+CARD_COVER_FILENAME = os.path.join(library_dir, "card_cover.png")
+CARD_FONT_FILENAME = os.path.join(library_dir, "arialroundedmtbold.ttf")
 
 
 async def get_discord_user(bot: Bot, user_id) -> discord.User:
@@ -104,6 +116,14 @@ CARD_TYPE_TO_EMOJI = {
     CardType.RED: "🟥",
     CardType.BLUE: "🟦",
     CardType.ASSASSIN: "💀",
+}
+
+# Define the colors used to display the cards
+CARD_TYPE_TO_RGB_COLOR = {
+    CardType.RED: (255, 60, 60),
+    CardType.BLUE: (20, 140, 255),
+    CardType.ASSASSIN: (60, 60, 60),
+    CardType.NEUTRAL: (245, 235, 220),
 }
 
 
@@ -510,6 +530,115 @@ class Game(BaseGameClass):
             return [PlayerRole.RED_SPYMASTER, PlayerRole.RED_OPERATIVE, PlayerRole.BLUE_SPYMASTER, PlayerRole.BLUE_OPERATIVE]
         else:
             return [PlayerRole.BLUE_SPYMASTER, PlayerRole.BLUE_OPERATIVE, PlayerRole.RED_SPYMASTER, PlayerRole.RED_OPERATIVE]
+
+    def generate_image(self, is_spymaster=False, reveal_covered=False):
+        # Load the image used to cover guessed cards
+        card_cover_template = Image.open(CARD_COVER_FILENAME).convert("RGBA")
+
+        # Load the font
+        font = ImageFont.truetype(CARD_FONT_FILENAME)
+
+        # Create a new mask for the cards
+        card_mask = Image.new("L", CARD_SIZE)    # "L" is greyscale
+        # Draw a rectangle with rounded corners on the mask
+        draw_mask = ImageDraw.Draw(card_mask)
+        draw_mask.rounded_rectangle([(0, 0), CARD_SIZE], CARD_CORNER_RADIUS, fill=255)
+
+        # Calculate and create a transparent image with the required size to hold the whole board
+        grid_size = 5
+        total_width = grid_size * (CARD_SIZE[0] + CARD_PADDING) - CARD_PADDING
+        total_height = grid_size * (CARD_SIZE[1] + CARD_PADDING) - CARD_PADDING
+        board = Image.new("RGBA", (total_width, total_height), (0, 0, 0, 0))
+
+        for i, card in enumerate(self.cards):
+            # Calculate this card's position in the image
+            row, col = divmod(i, grid_size)
+            x = col * (CARD_SIZE[0] + CARD_PADDING)
+            y = row * (CARD_SIZE[1] + CARD_PADDING)
+
+            # Create the base of the card
+            bg_color = CARD_TYPE_TO_RGB_COLOR.get(CardType.NEUTRAL)
+            if is_spymaster or card.tapped:
+                bg_color = CARD_TYPE_TO_RGB_COLOR.get(card.type)
+            card_bg = Image.new("RGBA", CARD_SIZE, bg_color)
+
+            # Prepare to start drawing on the card
+            draw_card = ImageDraw.Draw(card_bg)
+
+            # Determine if the text should be displayed in white or black, depending on the background's brightness
+            text_color = (35, 35, 35, 255)
+            bg_brightness = 0.299 * bg_color[0] + 0.587 * bg_color[1] + 0.114 * bg_color[2]  # Calculates perceived brightness
+            if bg_brightness < 150:
+                text_color = (245, 245, 245, 255)
+
+            # Resize the text to fit in the card, if necessary
+            card_text = card.word.upper()
+            font_size = BASE_FONT_SIZE
+            font = font.font_variant(size=font_size)    # Copy the font with a different font size
+            text_bbox = draw_card.textbbox((0, 0), card_text, font=font)
+            while font_size > MIN_FONT_SIZE and (text_bbox[2] - text_bbox[0]) > CARD_SIZE[0] - TEXT_PADDING:
+                font_size -= 1
+                # Check the size of the word with a specific font size
+                font = font.font_variant(size=font_size)
+                text_bbox = draw_card.textbbox((0, 0), card_text, font=font)
+            # Draw the text on the card
+            text_position = (
+                (CARD_SIZE[0] - (text_bbox[2] - text_bbox[0])) // 2,
+                (CARD_SIZE[1] - (text_bbox[3] - text_bbox[1])) // 2
+            )
+            draw_card.text(text_position, card_text, fill=text_color, font=font)
+
+            # If a card is guessed, cover it
+            if card.tapped:
+                # Creates a greyscale copy of the cover template
+                cover = card_cover_template.resize(CARD_SIZE).convert("L")
+
+                # Mirror the cover image if it's an assassin card (for extra clarity)
+                if card.type == CardType.ASSASSIN:
+                    cover = cover.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+
+                # The cover is colorized to match the card's type
+                cover_color = CARD_TYPE_TO_RGB_COLOR.get(card.type)
+                cover = ImageOps.colorize(
+                    cover,
+                    black="black",
+                    white=cover_color
+                ).convert("RGBA")
+
+                # Make the cover transparent if we need to reveal the covered cards
+                alpha = 128 if reveal_covered else 255
+                alpha_layer = Image.new("L", CARD_SIZE, alpha)
+                cover.putalpha(alpha_layer)
+
+                # Add the cover on top of the card
+                card_bg.alpha_composite(cover)
+
+            # Remove pixels so that the card fits the card mask
+            card_bg = Image.composite(
+                card_bg,
+                Image.new("RGBA", CARD_SIZE, (0, 0, 0, 0)),     # Empty image
+                card_mask
+            )
+
+            # Add a border (matching the card's rounded corners) to the card
+            border = Image.new("RGBA", CARD_SIZE, (0, 0, 0, 0))
+            draw_border = ImageDraw.Draw(border)
+            draw_border.rounded_rectangle(
+                [(0, 0), CARD_SIZE],
+                CARD_CORNER_RADIUS,
+                outline=(0, 0, 0, 40),  # Darkened/transparent borders
+                width=CARD_BORDER_WIDTH
+            )
+            card_bg.alpha_composite(border)
+
+            # Add the card to the board on the correct position
+            board.alpha_composite(card_bg, dest=(x, y))
+
+        # Save the board image in memory and return it
+        board_image = BytesIO()
+        board.save(board_image, format="PNG")
+        board_image.seek(0)  # Set buffer position to the start so the data will be read from there
+        return board_image
 
     def add_history(self, line):
         for role in self.history.keys():
