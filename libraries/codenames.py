@@ -8,7 +8,7 @@ from io import BytesIO
 import discord
 from discord import ButtonStyle, DMChannel, ui, Interaction
 from discord.ext.commands import Bot, Context
-from discord.ui import View, Button, Modal
+from discord.ui import View, Button, Modal, Select
 from dotenv import load_dotenv
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
@@ -697,6 +697,48 @@ class Game(BaseGameClass):
         self.clue_amount = number
         await self.next_turn()
 
+    async def chose_word(self, word, user_id):
+        card = self.get_card(word)
+        role = self.get_user_role(user_id)
+        user_name = await self.get_role_user_name(role)
+        if card.tapped:
+            # Interpret this as the player ending their turn
+            if self.guess_count == 0:
+                raise CodenamesException("You must choose at least one card each turn.")
+            self.add_history(f"{user_name} finished guessing.")
+            await self.next_turn()
+            return
+
+        card.tapped = True
+        self.guess_count += 1
+        card_emoji = CARD_TYPE_TO_EMOJI[card.type]
+        self.add_history(f"{user_name} guessed **{card.word}{card_emoji}**.")
+        if self.clue_amount != 0 and self.guess_count > self.clue_amount:
+            if self.is_game_finished():
+                self.end_game()
+                await self.update_messages()
+                return
+            self.add_history(f"Reached maximum amount of guesses for this turn.")
+            await self.next_turn()
+        elif role == PlayerRole.RED_OPERATIVE and card.type == CardType.RED:
+            if self.is_game_finished():
+                self.end_game()
+                await self.update_messages()
+                return
+            await self.update_messages()
+        elif role == PlayerRole.BLUE_OPERATIVE and card.type == CardType.BLUE:
+            if self.is_game_finished():
+                self.end_game()
+                await self.update_messages()
+                return
+            await self.update_messages()
+        else:
+            if self.is_game_finished():
+                self.end_game()
+                await self.update_messages()
+                return
+            await self.next_turn()
+
     async def choose_word(self, word, user_id, interaction: Interaction):
         card = self.get_card(word)
         if self.finished:
@@ -852,7 +894,8 @@ class Game(BaseGameClass):
                 embed = await self.get_embed(role, is_final_message_edit=False)
                 user = await get_discord_user(self.bot, user_id)
                 is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
-                file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
+                image = self.generate_image(is_spymaster)
+                file = discord.File(image, filename="codenames.png")
                 message_object = await user.send(embed=embed, view=self.GameView(self, role), file=file)
                 self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
             self.save_to_file()
@@ -872,6 +915,19 @@ class Game(BaseGameClass):
             await message_object.edit(embed=embed, view=self.GameView(self, role), attachments=[file])
         self.save_to_file()
 
+    class CardSelectMenu(Select):
+        def __init__(self, game, custom_id: str, disabled: bool):
+            self.game = game
+            options = []
+            for card in self.game.cards:
+                if card.tapped is False:
+                    options.append(discord.SelectOption(label=card.word, value=card.word))
+            super().__init__(placeholder="Choose a card...", options=options, custom_id=custom_id, disabled=disabled)
+
+        async def callback(self, interaction: discord.Interaction):
+            user_id = interaction.user.id
+            await self.game.chose_word(self.values[0], user_id)
+
     class GameView(View):
 
         def __init__(self, game, role: str):
@@ -879,37 +935,47 @@ class Game(BaseGameClass):
             self.game = game    # type: Game
             self.role = role
 
-            if self.role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished:
-                for card in self.game.cards:
-                    button_color = CARD_TYPE_TO_BUTTON_COLOR[card.type]
-                    word = card.get_word_formatted(self.game.max_word_length)
-                    emoji = None
-                    if card.type == CardType.ASSASSIN:
-                        emoji = CARD_TYPE_TO_EMOJI[CardType.ASSASSIN]
-                    # If a card is tapped, change it to show just an emoji
-                    if card.tapped:
-                        word = (self.game.max_word_length - 1) * "_"
-                        emoji = CARD_TYPE_TO_EMOJI[card.type]
-                    custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_{card.word}"
-                    self.add_item(Button(style=button_color, label=word, custom_id=custom_id, emoji=emoji))
+            disabled = True if role != self.game.turn_order[0] else False
+
+            if self.game.finished:
+                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_rematch"
+                self.add_item(Button(style=ButtonStyle.grey, label="Rematch", custom_id=custom_id))
+            elif self.role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
+                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_enter-clue"
+                self.add_item(Button(style=ButtonStyle.grey, label="Enter clue", custom_id=custom_id, disabled=disabled))
             else:
-                for card in self.game.cards:
-                    card_type = card.type if card.tapped else CardType.NEUTRAL
-                    button_color = CARD_TYPE_TO_BUTTON_COLOR[card_type]
-                    word = card.get_word_formatted(self.game.max_word_length)
-                    emoji = None
-                    # If a card is tapped, change it to show just an emoji
-                    if card.tapped:
-                        word = (self.game.max_word_length - 2) * "_"
-                        emoji = CARD_TYPE_TO_EMOJI[card.type]
-                    custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_{card.word}"
-                    self.add_item(Button(style=button_color, label=word, custom_id=custom_id, emoji=emoji))
+                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_choose-card"
+                self.add_item(self.game.CardSelectMenu(self.game, custom_id=custom_id, disabled=disabled))
+
+                end_turn_disabled = True if self.game.guess_count == 0 else False
+                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_end-turn"
+                self.add_item(Button(style=ButtonStyle.grey, label="End turn", custom_id=custom_id, disabled=end_turn_disabled))
+
+            custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_reveal-cards"
+            self.add_item(Button(style=ButtonStyle.grey, label="Reveal cards", custom_id=custom_id))
+            custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_cover-cards"
+            self.add_item(Button(style=ButtonStyle.grey, label="Cover cards", custom_id=custom_id))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
                 user_id = interaction.user.id
-                word = interaction.data.get("custom_id").split("_")[-1]
-                await self.game.choose_word(word, user_id, interaction)
+                user_name = (await get_discord_user(self.game.bot, user_id)).global_name
+                action = interaction.data.get("custom_id").split("_")[-1]
+                if action == "reveal-cards":
+                    pass
+                elif action == "cover-cards":
+                    pass
+                elif action == "enter-clue":
+                    await interaction.response.send_modal(self.game.ClueModal(self.game))
+                    print("sent modal")
+                elif action == "rematch":
+                    game_setup = GameSetup(self.game.bot)
+                    user_ids = list(self.game.roles.values())
+                    await game_setup.send_new_user_messages(user_ids, user_name)
+                elif action == "end-turn":
+                    self.game.add_history(f"{user_name} finished guessing.")
+                    await self.game.next_turn()
+
                 # noinspection PyUnresolvedReferences
                 await interaction.response.defer()
             except CodenamesException as e:
