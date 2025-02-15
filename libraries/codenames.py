@@ -120,10 +120,10 @@ CARD_TYPE_TO_EMOJI = {
 
 # Define the colors used to display the cards
 CARD_TYPE_TO_RGB_COLOR = {
-    CardType.RED: (255, 60, 60),
-    CardType.BLUE: (20, 140, 255),
-    CardType.ASSASSIN: (60, 60, 60),
-    CardType.NEUTRAL: (245, 235, 220),
+    CardType.RED: (220, 60, 60),
+    CardType.BLUE: (20, 125, 200),
+    CardType.ASSASSIN: (50, 50, 50),
+    CardType.NEUTRAL: (220, 215, 210),
 }
 
 
