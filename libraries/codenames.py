@@ -1063,6 +1063,9 @@ class Game(BaseGameClass):
             custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_cover-cards"
             self.add_item(Button(style=ButtonStyle.grey, label="Cover cards", custom_id=custom_id))
 
+            custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_settings"
+            self.add_item(Button(style=ButtonStyle.grey, label="Settings", custom_id=custom_id))
+
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
                 user_id = interaction.user.id
@@ -1087,6 +1090,9 @@ class Game(BaseGameClass):
                 elif action == "end-turn":
                     self.game.add_history(f"{user_name} finished guessing.")
                     await self.game.next_turn()
+                elif action == "settings":
+                    settings = UserSettings(self.game.bot, user_id)
+                    await settings.send_message()
 
                 # noinspection PyUnresolvedReferences
                 await interaction.response.defer()
