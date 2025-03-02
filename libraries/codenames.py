@@ -300,7 +300,7 @@ class UserSettings:
                 # noinspection PyUnresolvedReferences
                 await interaction.response.send_message(str(e), ephemeral=True)
             except Exception as e:
-                await send_error_message(self.user_settings.bot, e)
+                await send_error_message(self.settings.bot, e)
 
             return True
 
@@ -1002,8 +1002,13 @@ class Game(BaseGameClass):
                 embed = await self.get_embed(role, is_final_message_edit=False)
                 user = await get_discord_user(self.bot, user_id)
                 is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
-                file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
-                message_object = await user.send(embed=embed, view=self.GameView(self, role), file=file)
+
+                settings = UserSettings(self.bot, user_id)
+                if settings.view_format == ViewFormat.IMAGE:
+                    file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
+                    message_object = await user.send(embed=embed, view=self.GameView(self, role), file=file)
+                else:
+                    message_object = await user.send(embed=embed, view=self.GameView(self, role))
                 self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
             self.save_to_file()
         except Exception as e:
@@ -1017,9 +1022,14 @@ class Game(BaseGameClass):
             role = self.get_user_role(user_id)
             embed = await self.get_embed(role, is_final_message_edit=is_final_message_edit)
             is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
-            file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
             message_object = await discord_message.get_message()
-            await message_object.edit(embed=embed, view=self.GameView(self, role), attachments=[file])
+
+            settings = UserSettings(self.bot, user_id)
+            if settings.view_format == ViewFormat.IMAGE:
+                file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
+                await message_object.edit(embed=embed, view=self.GameView(self, role), attachments=[file])
+            elif settings.view_format == ViewFormat.BUTTONS:
+                await message_object.edit(embed=embed, view=self.GameView(self, role))
         self.save_to_file()
 
     class CardSelectMenu(Select):
@@ -1042,57 +1052,95 @@ class Game(BaseGameClass):
             self.game = game    # type: Game
             self.role = role
 
-            disabled = True if role != self.game.turn_order[0] else False
+            user_id = self.game.roles[role]
+            settings = UserSettings(self.game.bot, user_id)
+            self.view_format = settings.view_format
 
-            if self.game.finished:
-                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_rematch"
-                self.add_item(Button(style=ButtonStyle.grey, label="Rematch", custom_id=custom_id))
-            elif self.role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
-                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_enter-clue"
-                self.add_item(Button(style=ButtonStyle.grey, label="Enter clue", custom_id=custom_id, disabled=disabled))
-            else:
-                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_choose-card"
-                self.add_item(self.game.CardSelectMenu(self.game, custom_id=custom_id, disabled=disabled))
+            if self.view_format == ViewFormat.IMAGE:
+                disabled = True if role != self.game.turn_order[0] else False
 
-                end_turn_disabled = True if self.game.guess_count == 0 else False
-                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_end-turn"
-                self.add_item(Button(style=ButtonStyle.grey, label="End turn", custom_id=custom_id, disabled=end_turn_disabled))
+                if self.game.finished:
+                    custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_rematch"
+                    self.add_item(Button(style=ButtonStyle.grey, label="Rematch", custom_id=custom_id))
+                elif self.role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
+                    custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_enter-clue"
+                    self.add_item(Button(style=ButtonStyle.grey, label="Enter clue", custom_id=custom_id, disabled=disabled))
+                else:
+                    custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_choose-card"
+                    self.add_item(self.game.CardSelectMenu(self.game, custom_id=custom_id, disabled=disabled))
 
-            custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_reveal-cards"
-            self.add_item(Button(style=ButtonStyle.grey, label="Reveal cards", custom_id=custom_id))
-            custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_cover-cards"
-            self.add_item(Button(style=ButtonStyle.grey, label="Cover cards", custom_id=custom_id))
+                    end_turn_disabled = True if self.game.guess_count == 0 else False
+                    custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_end-turn"
+                    self.add_item(Button(style=ButtonStyle.grey, label="End turn", custom_id=custom_id, disabled=end_turn_disabled))
 
-            custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_settings"
-            self.add_item(Button(style=ButtonStyle.grey, label="Settings", custom_id=custom_id))
+                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_reveal-cards"
+                self.add_item(Button(style=ButtonStyle.grey, label="Reveal cards", custom_id=custom_id))
+                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_cover-cards"
+                self.add_item(Button(style=ButtonStyle.grey, label="Cover cards", custom_id=custom_id))
+
+                custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_settings"
+                self.add_item(Button(style=ButtonStyle.grey, label="Settings", custom_id=custom_id))
+
+            elif self.view_format == ViewFormat.BUTTONS:
+                if self.role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished:
+                    for card in self.game.cards:
+                        button_color = CARD_TYPE_TO_BUTTON_COLOR[card.type]
+                        word = card.get_word_formatted(self.game.max_word_length)
+                        emoji = None
+                        if card.type == CardType.ASSASSIN:
+                            emoji = CARD_TYPE_TO_EMOJI[CardType.ASSASSIN]
+                        # If a card is tapped, change it to show just an emoji
+                        if card.tapped:
+                            word = (self.game.max_word_length - 1) * "_"
+                            emoji = CARD_TYPE_TO_EMOJI[card.type]
+                        custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_{card.word}"
+                        self.add_item(Button(style=button_color, label=word, custom_id=custom_id, emoji=emoji))
+                else:
+                    for card in self.game.cards:
+                        card_type = card.type if card.tapped else CardType.NEUTRAL
+                        button_color = CARD_TYPE_TO_BUTTON_COLOR[card_type]
+                        word = card.get_word_formatted(self.game.max_word_length)
+                        emoji = None
+                        # If a card is tapped, change it to show just an emoji
+                        if card.tapped:
+                            word = (self.game.max_word_length - 2) * "_"
+                            emoji = CARD_TYPE_TO_EMOJI[card.type]
+                        custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_{card.word}"
+                        self.add_item(Button(style=button_color, label=word, custom_id=custom_id, emoji=emoji))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
                 user_id = interaction.user.id
-                user_name = (await get_discord_user(self.game.bot, user_id)).global_name
-                action = interaction.data.get("custom_id").split("_")[-1]
-                if action == "reveal-cards":
-                    role = self.game.get_user_role(user_id)
-                    is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished
-                    file = discord.File(self.game.generate_image(is_spymaster, reveal_covered=True), filename="codenames.png")
-                    await interaction.message.edit(attachments=[file])
-                elif action == "cover-cards":
-                    role = self.game.get_user_role(user_id)
-                    is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished
-                    file = discord.File(self.game.generate_image(is_spymaster, reveal_covered=False), filename="codenames.png")
-                    await interaction.message.edit(attachments=[file])
-                elif action == "enter-clue":
-                    await interaction.response.send_modal(self.game.ClueModal(self.game))
-                elif action == "rematch":
-                    game_setup = GameSetup(self.game.bot)
-                    user_ids = list(self.game.roles.values())
-                    await game_setup.send_new_user_messages(user_ids, user_name)
-                elif action == "end-turn":
-                    self.game.add_history(f"{user_name} finished guessing.")
-                    await self.game.next_turn()
-                elif action == "settings":
-                    settings = UserSettings(self.game.bot, user_id)
-                    await settings.send_message()
+
+                if self.view_format == ViewFormat.IMAGE:
+                    user_name = (await get_discord_user(self.game.bot, user_id)).global_name
+                    action = interaction.data.get("custom_id").split("_")[-1]
+                    if action == "reveal-cards":
+                        role = self.game.get_user_role(user_id)
+                        is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished
+                        file = discord.File(self.game.generate_image(is_spymaster, reveal_covered=True), filename="codenames.png")
+                        await interaction.message.edit(attachments=[file])
+                    elif action == "cover-cards":
+                        role = self.game.get_user_role(user_id)
+                        is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished
+                        file = discord.File(self.game.generate_image(is_spymaster, reveal_covered=False), filename="codenames.png")
+                        await interaction.message.edit(attachments=[file])
+                    elif action == "enter-clue":
+                        await interaction.response.send_modal(self.game.ClueModal(self.game))
+                    elif action == "rematch":
+                        game_setup = GameSetup(self.game.bot)
+                        user_ids = list(self.game.roles.values())
+                        await game_setup.send_new_user_messages(user_ids, user_name)
+                    elif action == "end-turn":
+                        self.game.add_history(f"{user_name} finished guessing.")
+                        await self.game.next_turn()
+                    elif action == "settings":
+                        settings = UserSettings(self.game.bot, user_id)
+                        await settings.send_message()
+
+                elif self.view_format == ViewFormat.BUTTONS:
+                    word = interaction.data.get("custom_id").split("_")[-1]
+                    await self.game.choose_word(word, user_id, interaction)
 
                 # noinspection PyUnresolvedReferences
                 await interaction.response.defer()
