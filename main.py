@@ -2390,6 +2390,17 @@ async def start_codenames(ctx):
         pass
 
 
+@bot.command(name="codenames_settings", help="Open the settings menu for Codenames.")
+async def codenames_settings(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+
+    await codenames.show_settings(ctx)
+    try:
+        await ctx.message.delete()
+    except discord.Forbidden:
+        pass
+
+
 @bot.event
 async def on_command_error(ctx, error):
     # If this was an intended exception, just send the exception message to the channel

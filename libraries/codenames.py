@@ -20,6 +20,7 @@ DEVELOPER_USER_ID = os.getenv("DEVELOPER_USER_ID")
 CODENAMES_WORDS_FILE = os.path.join(library_dir, "codenames_words.txt")
 MESSAGE_TO_GAME_MAPPING_FILE = os.path.join(library_dir, "message_to_game_mapping.json")
 GAME_INFO_FILE = os.path.join(library_dir, "game_info.json")
+USER_SETTINGS_FILE = os.path.join(library_dir, "user_settings.json")
 
 # Values for visualizing the cards
 CARD_CORNER_RADIUS = 25
@@ -214,6 +215,101 @@ class DiscordMessage:
             return await channel.fetch_message(self.message_id)
         except Exception as e:
             await send_error_message(self.bot, e)
+
+
+class ViewFormat:
+    IMAGE = "image"
+    BUTTONS = "buttons"
+
+
+class UserSettings:
+
+    def __init__(self, bot: Bot, user_id):
+        self.bot = bot
+        self.user_id = str(user_id)
+        self.discord_message = None
+
+        user_settings = read_file_safe(USER_SETTINGS_FILE).get(self.user_id, {})
+        self.view_format = user_settings.get("view_format", ViewFormat.IMAGE)
+
+    def to_dict(self):
+        return {
+            "view_format": self.view_format,
+        }
+
+    def save_to_file(self, json_dict=None):
+        if json_dict is None:
+            json_dict = self.to_dict()
+
+        all_settings = read_file_safe(USER_SETTINGS_FILE)
+        all_settings[self.user_id] = json_dict
+        with open(USER_SETTINGS_FILE, "w") as file:
+            json.dump(all_settings, file, indent=4)
+
+    async def send_message(self):
+        user = await get_discord_user(self.bot, self.user_id)
+        embed = await self.get_embed()
+        view = self.SettingsView(self)
+        message_object = await user.send(embed=embed, view=view)    # type: discord.Message
+        self.discord_message = DiscordMessage(self.bot, message_object.channel.id, message_object.id)
+
+    async def get_embed(self):
+        description = ""
+        description += f"View format: **{self.view_format}**\n"
+        embed = discord.Embed(
+            title="Codenames settings",
+            description=description,
+            color=discord.Color.brand_green()
+        )
+        return embed
+
+    async def set_setting(self, setting, value):
+        setattr(self, setting, value)
+
+        # Update the settings message
+        embed = await self.get_embed()
+        view = self.SettingsView(self)
+        message_object = await self.discord_message.get_message()
+        await message_object.edit(embed=embed, view=view)
+
+        self.save_to_file()
+
+    class SettingsView(View):
+
+        def __init__(self, settings):
+            super().__init__(timeout=None)
+            self.settings = settings
+
+            self.add_item(self.settings.ViewFormatSelectMenu(self.settings))
+            # self.add_item(Button(style=ButtonStyle.gray, label="Change view format", custom_id=f"view_format"))
+
+        async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            try:
+                user_id = interaction.user.id
+                button_id = interaction.data.get("custom_id")
+
+                # noinspection PyUnresolvedReferences
+                await interaction.response.defer()
+            except CodenamesException as e:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.send_message(str(e), ephemeral=True)
+            except Exception as e:
+                await send_error_message(self.user_settings.bot, e)
+
+            return True
+
+    class ViewFormatSelectMenu(Select):
+        def __init__(self, settings):
+            self.settings = settings
+            options = []
+            for key, value in vars(ViewFormat).items():
+                if key.isupper() and isinstance(value, str):
+                    options.append(discord.SelectOption(label=value, value=value))
+            super().__init__(placeholder="View format", options=options)
+
+        async def callback(self, interaction: discord.Interaction):
+            selected_format = self.values[0]
+            await self.settings.set_setting("view_format", selected_format)
 
 
 class BaseGameClass(ABC):
@@ -434,6 +530,12 @@ async def create_new_game(ctx: Context):
     game_setup = GameSetup(ctx.bot)
     await game_setup.send_new_message(ctx)
     return game_setup
+
+
+async def show_settings(ctx: Context):
+    user_id = str(ctx.author.id)
+    settings = UserSettings(ctx.bot, user_id)
+    await settings.send_message()
 
 
 class Game(BaseGameClass):
