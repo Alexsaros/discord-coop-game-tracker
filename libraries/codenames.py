@@ -254,8 +254,8 @@ class UserSettings:
         self.discord_message = DiscordMessage(self.bot, message_object.channel.id, message_object.id)
 
     async def get_embed(self):
-        description = ""
-        description += f"View format: **{self.view_format}**\n"
+        description = "Changes to these settings will take effect on new messages."
+        description += f"\nView format: **{self.view_format}**"
         embed = discord.Embed(
             title="Codenames settings",
             description=description,
