@@ -274,6 +274,10 @@ class UserSettings:
 
         self.save_to_file()
 
+    async def delete_message(self):
+        message_object = await self.discord_message.get_message()
+        await message_object.delete()
+
     class SettingsView(View):
 
         def __init__(self, settings):
@@ -281,12 +285,14 @@ class UserSettings:
             self.settings = settings
 
             self.add_item(self.settings.ViewFormatSelectMenu(self.settings))
-            # self.add_item(Button(style=ButtonStyle.gray, label="Change view format", custom_id=f"view_format"))
+            self.add_item(Button(style=ButtonStyle.red, label="Close settings", custom_id=f"close_settings"))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
-                user_id = interaction.user.id
                 button_id = interaction.data.get("custom_id")
+
+                if button_id == "close_settings":
+                    await self.settings.delete_message()
 
                 # noinspection PyUnresolvedReferences
                 await interaction.response.defer()
