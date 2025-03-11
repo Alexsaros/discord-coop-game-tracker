@@ -84,9 +84,9 @@ def load_games(bot: Bot):
     game_info_dict = read_file_safe(GAME_INFO_FILE)
     for game_uuid, game_info in game_info_dict.items():
         if game_info["setup"]:
-            game_object = GameSetup(bot, json_data=game_info)
+            GameSetup(bot, json_data=game_info)
         else:
-            game_object = Game(bot=bot, json_data=game_info)
+            Game(bot=bot, json_data=game_info)
 
 
 class CodenamesException(Exception):
@@ -203,12 +203,15 @@ class DiscordMessage:
             "message_id": self.message_id,
         }
 
-    def get_channel_object(self):
-        return self.bot.get_channel(self.channel_id)
+    async def get_channel_object(self):
+        channel = self.bot.get_channel(self.channel_id)
+        if channel is None:
+            channel = await self.bot.fetch_channel(self.channel_id)
+        return channel
 
     async def get_message(self) -> discord.Message:
         try:
-            channel = self.bot.get_channel(self.channel_id)
+            channel = await self.get_channel_object()
             if channel is None:
                 raise Exception(f"Could not find channel with ID {self.channel_id}.")
 
@@ -576,6 +579,7 @@ class Game(BaseGameClass):
 
     def load_json(self, json_data):
         self.uuid = json_data.get("uuid")
+        self.discord_messages = [DiscordMessage(self.bot, json_data=msg) for msg in json_data["discord_messages"]]
         self.turn = json_data.get("turn")
         self.roles = json_data["roles"]
         self.history = json_data["history"]
@@ -590,6 +594,7 @@ class Game(BaseGameClass):
         return {
             "setup": False,
             "uuid": self.uuid,
+            "discord_messages": [msg.to_dict() for msg in self.discord_messages],
             "turn": self.turn,
             "roles": self.roles,
             "history": self.history,
@@ -1016,7 +1021,7 @@ class Game(BaseGameClass):
 
     async def update_messages(self, is_final_message_edit=False):
         for discord_message in self.discord_messages:
-            channel_object = discord_message.get_channel_object()   # type: DMChannel
+            channel_object = await discord_message.get_channel_object()   # type: DMChannel
             user_id = channel_object.recipient.id
 
             role = self.get_user_role(user_id)
