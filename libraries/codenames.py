@@ -588,6 +588,8 @@ class Game(BaseGameClass):
         self.cards = json_data["cards"]
         self.cards = [Card(json_data=card) for card in json_data["cards"]]
         self.guess_count = json_data["guess_count"]
+        self.clue_word = json_data.get("clue_word", "")
+        self.clue_amount = json_data.get("clue_amount", 0)
         self.max_word_length = self.get_max_word_length()
 
     def to_dict(self):
@@ -602,6 +604,8 @@ class Game(BaseGameClass):
             "turn_order": self.turn_order,
             "cards": [card.to_dict() for card in self.cards],
             "guess_count": self.guess_count,
+            "clue_word": self.clue_word,
+            "clue_amount": self.clue_amount,
         }
 
     def get_max_word_length(self):
@@ -810,49 +814,7 @@ class Game(BaseGameClass):
         self.clue_amount = number
         await self.next_turn()
 
-    async def chose_word(self, word, user_id):
-        card = self.get_card(word)
-        role = self.get_user_role(user_id)
-        user_name = await self.get_role_user_name(role)
-        if card.tapped:
-            # Interpret this as the player ending their turn
-            if self.guess_count == 0:
-                raise CodenamesException("You must choose at least one card each turn.")
-            self.add_history(f"{user_name} finished guessing.")
-            await self.next_turn()
-            return
-
-        card.tapped = True
-        self.guess_count += 1
-        card_emoji = CARD_TYPE_TO_EMOJI[card.type]
-        self.add_history(f"{user_name} guessed **{card.word}{card_emoji}**.")
-        if self.clue_amount != 0 and self.guess_count > self.clue_amount:
-            if self.is_game_finished():
-                self.end_game()
-                await self.update_messages()
-                return
-            self.add_history(f"Reached maximum amount of guesses for this turn.")
-            await self.next_turn()
-        elif role == PlayerRole.RED_OPERATIVE and card.type == CardType.RED:
-            if self.is_game_finished():
-                self.end_game()
-                await self.update_messages()
-                return
-            await self.update_messages()
-        elif role == PlayerRole.BLUE_OPERATIVE and card.type == CardType.BLUE:
-            if self.is_game_finished():
-                self.end_game()
-                await self.update_messages()
-                return
-            await self.update_messages()
-        else:
-            if self.is_game_finished():
-                self.end_game()
-                await self.update_messages()
-                return
-            await self.next_turn()
-
-    async def choose_word(self, word, user_id, interaction: Interaction):
+    async def choose_word(self, word, user_id, interaction: Interaction = None):
         card = self.get_card(word)
         if self.finished:
             if card.type != CardType.ASSASSIN:
@@ -867,7 +829,8 @@ class Game(BaseGameClass):
         if role != self.turn_order[0]:
             raise CodenamesException("It is not your turn.")
 
-        if role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
+        # interaction being None means that the image view mode was used
+        if interaction is not None and role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER]:
             # noinspection PyUnresolvedReferences
             await interaction.response.send_modal(self.ClueModal(self))
         else:
@@ -1047,8 +1010,11 @@ class Game(BaseGameClass):
             super().__init__(placeholder="Choose a card...", options=options, custom_id=custom_id, disabled=disabled)
 
         async def callback(self, interaction: discord.Interaction):
-            user_id = interaction.user.id
-            await self.game.chose_word(self.values[0], user_id)
+            try:
+                user_id = interaction.user.id
+                await self.game.choose_word(self.values[0], user_id)
+            except Exception as e:
+                await send_error_message(self.game.bot, e)
 
     class GameView(View):
 
