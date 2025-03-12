@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import random
@@ -451,28 +452,34 @@ class GameSetup(BaseGameClass):
         self.save_to_file()
         return message_object
 
+    async def send_new_user_message(self, embed: discord.Embed, user_id: int) -> DiscordMessage:
+        user = await get_discord_user(self.bot, user_id)
+        view = self.GameSetupView(self, user_id)
+        self.message_custom_id_prefixes.append(user_id)
+        message_object = await user.send(embed=embed, view=view)    # type: discord.Message
+        return DiscordMessage(self.bot, message_object.channel.id, message_object.id)
+
     async def send_new_user_messages(self, user_ids: list[int], name=""):
         try:
             if name:
                 embed = await self.get_embed(f"{name} has requested a rematch.")
             else:
                 embed = await self.get_embed()
-            self.discord_messages = []
-            for user_id in user_ids:
-                user = await get_discord_user(self.bot, user_id)
-                view = self.GameSetupView(self, user_id)
-                self.message_custom_id_prefixes.append(user_id)
-                message_object = await user.send(embed=embed, view=view)    # type: discord.Message
-                self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
+            send_msg_tasks = [self.send_new_user_message(embed, user_id) for user_id in user_ids]
+            self.discord_messages = await asyncio.gather(*send_msg_tasks)
             self.save_to_file()
         except Exception as e:
             await send_error_message(self.bot, e)
 
+    @staticmethod
+    async def update_message(embed: discord.Embed, discord_message: DiscordMessage):
+        message_object = await discord_message.get_message()
+        await message_object.edit(embed=embed)
+
     async def update_messages(self):
         embed = await self.get_embed()
-        for discord_message in self.discord_messages:
-            message_object = await discord_message.get_message()
-            await message_object.edit(embed=embed)
+        update_msg_tasks = [self.update_message(embed, discord_message) for discord_message in self.discord_messages]
+        await asyncio.gather(*update_msg_tasks)
         self.save_to_file()
 
     async def start_game(self):
@@ -962,42 +969,53 @@ class Game(BaseGameClass):
         embed.add_field(name="Blue Operative", value=await self.get_role_user_name(PlayerRole.BLUE_OPERATIVE) + bo_turn, inline=True)
         return embed
 
-    async def send_new_messages_to_all_users(self):
+    async def send_new_message_to_user(self, role: str, user_id: int, retry=True) -> DiscordMessage:
         try:
-            self.discord_messages = []
-            for role, user_id in self.roles.items():
-                self.history[role] = []
-                embed = await self.get_embed(role, is_final_message_edit=False)
-                user = await get_discord_user(self.bot, user_id)
-                is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
-
-                settings = UserSettings(self.bot, user_id)
-                if settings.view_format == ViewFormat.IMAGE:
-                    file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
-                    message_object = await user.send(embed=embed, view=self.GameView(self, role), file=file)
-                else:
-                    message_object = await user.send(embed=embed, view=self.GameView(self, role))
-                self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
-            self.save_to_file()
-        except Exception as e:
-            await send_error_message(self.bot, e)
-
-    async def update_messages(self, is_final_message_edit=False):
-        for discord_message in self.discord_messages:
-            channel_object = await discord_message.get_channel_object()   # type: DMChannel
-            user_id = channel_object.recipient.id
-
-            role = self.get_user_role(user_id)
-            embed = await self.get_embed(role, is_final_message_edit=is_final_message_edit)
+            self.history[role] = []
+            embed = await self.get_embed(role, is_final_message_edit=False)
+            user = await get_discord_user(self.bot, user_id)
             is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
-            message_object = await discord_message.get_message()
 
             settings = UserSettings(self.bot, user_id)
             if settings.view_format == ViewFormat.IMAGE:
                 file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
-                await message_object.edit(embed=embed, view=self.GameView(self, role), attachments=[file])
-            elif settings.view_format == ViewFormat.BUTTONS:
-                await message_object.edit(embed=embed, view=self.GameView(self, role))
+                message_object = await user.send(embed=embed, view=self.GameView(self, role), file=file)
+            else:
+                message_object = await user.send(embed=embed, view=self.GameView(self, role))
+            return DiscordMessage(self.bot, message_object.channel.id, message_object.id)
+        except discord.HTTPException as e:
+            # Prevent "40003 You are opening direct messages too fast" errors
+            if retry:
+                return await self.send_new_message_to_user(role, user_id, retry=False)
+            raise e
+
+    async def send_new_messages_to_all_users(self):
+        try:
+            send_msg_tasks = [self.send_new_message_to_user(role, user_id) for role, user_id in self.roles.items()]
+            self.discord_messages = await asyncio.gather(*send_msg_tasks)
+            self.save_to_file()
+        except Exception as e:
+            await send_error_message(self.bot, e)
+
+    async def update_message(self, discord_message: DiscordMessage, is_final_message_edit=False):
+        channel_object = await discord_message.get_channel_object()   # type: DMChannel
+        user_id = channel_object.recipient.id
+
+        role = self.get_user_role(user_id)
+        embed = await self.get_embed(role, is_final_message_edit=is_final_message_edit)
+        is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
+        message_object = await discord_message.get_message()
+
+        settings = UserSettings(self.bot, user_id)
+        if settings.view_format == ViewFormat.IMAGE:
+            file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
+            await message_object.edit(embed=embed, view=self.GameView(self, role), attachments=[file])
+        elif settings.view_format == ViewFormat.BUTTONS:
+            await message_object.edit(embed=embed, view=self.GameView(self, role))
+
+    async def update_messages(self, is_final_message_edit=False):
+        update_msg_tasks = [self.update_message(discord_message, is_final_message_edit) for discord_message in self.discord_messages]
+        await asyncio.gather(*update_msg_tasks)
         self.save_to_file()
 
     class CardSelectMenu(Select):
