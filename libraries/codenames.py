@@ -226,6 +226,18 @@ class ViewFormat:
     BUTTONS = "buttons"
 
 
+class OnOff:
+    ON = "on"
+    OFF = "off"
+
+
+def invert_on_off(on_off):
+    if on_off == OnOff.OFF:
+        return OnOff.ON
+    else:
+        return OnOff.OFF
+
+
 class UserSettings:
 
     def __init__(self, bot: Bot, user_id):
@@ -235,10 +247,12 @@ class UserSettings:
 
         user_settings = read_file_safe(USER_SETTINGS_FILE).get(self.user_id, {})
         self.view_format = user_settings.get("view_format", ViewFormat.IMAGE)
+        self.guess_confirmation = user_settings.get("guess_confirmation", OnOff.OFF)
 
     def to_dict(self):
         return {
             "view_format": self.view_format,
+            "guess_confirmation": self.guess_confirmation,
         }
 
     def save_to_file(self, json_dict=None):
@@ -259,7 +273,8 @@ class UserSettings:
 
     async def get_embed(self):
         description = "Changes to these settings will take effect on new messages."
-        description += f"\nView format: **{self.view_format}**"
+        description += f"\nView format: **{self.view_format}**\n" \
+                       f"Confirmation on guesses: **{self.guess_confirmation}**"
         embed = discord.Embed(
             title="Codenames settings",
             description=description,
@@ -286,16 +301,19 @@ class UserSettings:
 
         def __init__(self, settings):
             super().__init__(timeout=None)
-            self.settings = settings
+            self.settings = settings    # type: UserSettings
 
             self.add_item(self.settings.ViewFormatSelectMenu(self.settings))
+            self.add_item(Button(style=ButtonStyle.grey, label=f"Turn guess confirmation {invert_on_off(self.settings.guess_confirmation)}", custom_id=f"guess_confirmation"))
             self.add_item(Button(style=ButtonStyle.red, label="Close settings", custom_id=f"close_settings"))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
                 button_id = interaction.data.get("custom_id")
 
-                if button_id == "close_settings":
+                if button_id == "guess_confirmation":
+                    await self.settings.set_setting("guess_confirmation", invert_on_off(self.settings.guess_confirmation))
+                elif button_id == "close_settings":
                     await self.settings.delete_message()
 
                 # noinspection PyUnresolvedReferences
@@ -821,7 +839,11 @@ class Game(BaseGameClass):
         self.clue_amount = number
         await self.next_turn()
 
-    async def choose_word(self, word, user_id, interaction: Interaction = None):
+    async def send_guess_confirmation(self, user_id, word):
+        user = await get_discord_user(self.bot, user_id)
+        await user.send(f"Are you sure you want to choose {word}?", view=self.GuessConfirmation(self, word, user_id))
+
+    async def choose_word(self, word, user_id, interaction: Interaction = None, confirmed=False):
         card = self.get_card(word)
         if self.finished:
             if card.type != CardType.ASSASSIN:
@@ -841,6 +863,11 @@ class Game(BaseGameClass):
             # noinspection PyUnresolvedReferences
             await interaction.response.send_modal(self.ClueModal(self))
         else:
+            settings = UserSettings(self.bot, user_id)
+            if not confirmed and settings.guess_confirmation:
+                await self.send_guess_confirmation(user_id, card.word)
+                return
+
             user_name = await self.get_role_user_name(role)
             if card.tapped:
                 # Interpret this as the player ending their turn
@@ -1161,3 +1188,34 @@ class Game(BaseGameClass):
                 await interaction.followup.send_message(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.game.bot, e)
+
+    class GuessConfirmation(View):
+
+        def __init__(self, game, word: str, user_id: int):
+            super().__init__()
+            self.game = game    # type: Game
+            self.word = word
+            self.user_id = user_id
+
+            self.add_item(Button(style=ButtonStyle.green, label="Yes", custom_id="yes"))
+            self.add_item(Button(style=ButtonStyle.red, label="No", custom_id="no"))
+
+        async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            try:
+                button_id = interaction.data.get("custom_id")
+
+                if button_id == "yes":
+                    await self.game.choose_word(self.word, self.user_id, confirmed=True)
+                elif button_id == "no":
+                    pass
+
+                # noinspection PyUnresolvedReferences
+                await interaction.response.defer()
+                await interaction.message.delete()
+            except CodenamesException as e:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.send_message(str(e), ephemeral=True)
+            except Exception as e:
+                await send_error_message(self.game.bot, e)
+
+            return True
