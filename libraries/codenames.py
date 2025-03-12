@@ -42,10 +42,10 @@ async def get_discord_user(bot: Bot, user_id) -> discord.User:
 
 
 async def send_error_message(bot, exception):
-    print(traceback.print_exc(exception))
-    print(exception)
+    traceback_msg = ''.join(traceback.format_exception(exception))
+    print(traceback_msg)
     developer = await get_discord_user(bot, DEVELOPER_USER_ID)
-    await developer.send(f"{type(exception)}: {exception}\n{traceback.print_exc(exception)}")
+    await developer.send(f"```{traceback_msg}```")
 
 
 user_id_to_user_name = {}
