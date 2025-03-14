@@ -1043,7 +1043,8 @@ class Game(BaseGameClass):
     async def update_messages(self, is_final_message_edit=False):
         update_msg_tasks = [self.update_message(discord_message, is_final_message_edit) for discord_message in self.discord_messages]
         await asyncio.gather(*update_msg_tasks)
-        self.save_to_file()
+        if not self.finished:
+            self.save_to_file()
 
     class CardSelectMenu(Select):
         def __init__(self, game, custom_id: str, disabled: bool):
