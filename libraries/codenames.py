@@ -1058,6 +1058,9 @@ class Game(BaseGameClass):
             try:
                 user_id = interaction.user.id
                 await self.game.choose_word(self.values[0], user_id)
+            except CodenamesException as e:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.send_message(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.game.bot, e)
 
