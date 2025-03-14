@@ -406,7 +406,7 @@ class GameSetup(BaseGameClass):
 
     def load_json(self, json_data):
         self.uuid = json_data["uuid"]
-        self.discord_messages = [DiscordMessage(self.bot, json_data=msg) for msg in json_data["discord_messages"]]
+        self.discord_messages = [DiscordMessage(self.bot, json_data=msg) for msg in json_data.get("discord_messages", [])]
         self.message_custom_id_prefixes = [prefix for prefix in json_data["message_custom_id_prefixes"]]
         self.roles = json_data["roles"]
         self.random_role = json_data["random_role"]
@@ -604,7 +604,7 @@ class Game(BaseGameClass):
 
     def load_json(self, json_data):
         self.uuid = json_data.get("uuid")
-        self.discord_messages = [DiscordMessage(self.bot, json_data=msg) for msg in json_data["discord_messages"]]
+        self.discord_messages = [DiscordMessage(self.bot, json_data=msg) for msg in json_data.get("discord_messages", [])]
         self.turn = json_data.get("turn")
         self.roles = json_data["roles"]
         self.history = json_data["history"]
