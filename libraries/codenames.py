@@ -864,7 +864,7 @@ class Game(BaseGameClass):
             await interaction.response.send_modal(self.ClueModal(self))
         else:
             settings = UserSettings(self.bot, user_id)
-            if not confirmed and settings.guess_confirmation:
+            if not confirmed and settings.guess_confirmation == OnOff.ON:
                 await self.send_guess_confirmation(user_id, card.word)
                 return
 
