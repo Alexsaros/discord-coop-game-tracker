@@ -309,18 +309,17 @@ class UserSettings:
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.defer()
+
                 button_id = interaction.data.get("custom_id")
 
                 if button_id == "guess_confirmation":
                     await self.settings.set_setting("guess_confirmation", invert_on_off(self.settings.guess_confirmation))
                 elif button_id == "close_settings":
                     await self.settings.delete_message()
-
-                # noinspection PyUnresolvedReferences
-                await interaction.response.defer()
             except CodenamesException as e:
-                # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(str(e), ephemeral=True)
+                await interaction.followup.send(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.settings.bot, e)
 
@@ -546,14 +545,14 @@ class GameSetup(BaseGameClass):
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.defer()
+
                 user_id = interaction.user.id
                 role = interaction.data.get("custom_id").split("_")[-1]
                 await self.game_setup.join_role(role, user_id)
-                # noinspection PyUnresolvedReferences
-                await interaction.response.defer()
             except CodenamesException as e:
-                # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(str(e), ephemeral=True)
+                await interaction.followup.send(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.game_setup.bot, e)
 
@@ -1061,7 +1060,7 @@ class Game(BaseGameClass):
                 await self.game.choose_word(self.values[0], user_id)
             except CodenamesException as e:
                 # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(str(e), ephemeral=True)
+                await interaction.followup.send(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.game.bot, e)
 
@@ -1146,6 +1145,7 @@ class Game(BaseGameClass):
                         file = discord.File(self.game.generate_image(is_spymaster, reveal_covered=False), filename="codenames.png")
                         await interaction.message.edit(attachments=[file])
                     elif action == "enter-clue":
+                        # noinspection PyUnresolvedReferences
                         await interaction.response.send_modal(self.game.ClueModal(self.game))
                     elif action == "rematch":
                         game_setup = GameSetup(self.game.bot)
@@ -1163,10 +1163,16 @@ class Game(BaseGameClass):
                     await self.game.choose_word(word, user_id, interaction)
 
                 # noinspection PyUnresolvedReferences
-                await interaction.response.defer()
+                if not interaction.response.is_done():
+                    # noinspection PyUnresolvedReferences
+                    await interaction.response.defer()
             except CodenamesException as e:
                 # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(str(e), ephemeral=True)
+                if interaction.response.is_done():
+                    await interaction.followup.send(str(e), ephemeral=True)
+                else:
+                    # noinspection PyUnresolvedReferences
+                    await interaction.response.send_message(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.game.bot, e)
 
@@ -1188,8 +1194,7 @@ class Game(BaseGameClass):
                 user_id = interaction.user.id
                 await self.game.give_clue(user_id, self.clue.value, self.number.value)
             except CodenamesException as e:
-                # noinspection PyUnresolvedReferences
-                await interaction.followup.send_message(str(e), ephemeral=True)
+                await interaction.followup.send(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.game.bot, e)
 
@@ -1206,6 +1211,9 @@ class Game(BaseGameClass):
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.defer()
+
                 button_id = interaction.data.get("custom_id")
 
                 if button_id == "yes":
@@ -1213,12 +1221,9 @@ class Game(BaseGameClass):
                 elif button_id == "no":
                     pass
 
-                # noinspection PyUnresolvedReferences
-                await interaction.response.defer()
                 await interaction.message.delete()
             except CodenamesException as e:
-                # noinspection PyUnresolvedReferences
-                await interaction.response.send_message(str(e), ephemeral=True)
+                await interaction.followup.send(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.game.bot, e)
 
