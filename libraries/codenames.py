@@ -33,6 +33,7 @@ MIN_FONT_SIZE = 12
 CARD_SIZE = (200, 150)
 CARD_COVER_FILENAME = os.path.join(library_dir, "card_cover.png")
 CARD_FONT_FILENAME = os.path.join(library_dir, "arialroundedmtbold.ttf")
+BACKGROUND_TRANSPARENCY = 30
 
 
 async def get_discord_user(bot: Bot, user_id) -> discord.User:
@@ -685,11 +686,16 @@ class Game(BaseGameClass):
         draw_mask = ImageDraw.Draw(card_mask)
         draw_mask.rounded_rectangle([(0, 0), CARD_SIZE], CARD_CORNER_RADIUS, fill=255)
 
+        # Figure out what color to make the background depending on whose turn it is now
+        current_role = self.turn_order[0]
+        current_color = PLAYER_ROLE_TO_COLOR[current_role]
+        background_color = CARD_TYPE_TO_RGB_COLOR[current_color] + (BACKGROUND_TRANSPARENCY,)
+
         # Calculate and create a transparent image with the required size to hold the whole board
         grid_size = 5
         total_width = grid_size * (CARD_SIZE[0] + CARD_PADDING) - CARD_PADDING
         total_height = grid_size * (CARD_SIZE[1] + CARD_PADDING) - CARD_PADDING
-        board = Image.new("RGBA", (total_width, total_height), (0, 0, 0, 0))
+        board = Image.new("RGBA", (total_width, total_height), background_color)
 
         for i, card in enumerate(self.cards):
             # Calculate this card's position in the image
