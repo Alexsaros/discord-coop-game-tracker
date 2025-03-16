@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import random
+import time
 import traceback
 from abc import ABC, abstractmethod
 import uuid
@@ -89,6 +90,36 @@ def load_games(bot: Bot):
             GameSetup(bot, json_data=game_info)
         else:
             Game(bot=bot, json_data=game_info)
+
+
+async def clean_up_old_games(bot: Bot):
+    try:
+        two_weeks_ago = time.time() - (14 * 24 * 60 * 60)
+        twelve_days_ago = time.time() - (12 * 24 * 60 * 60)
+
+        game_info_dict = read_file_safe(GAME_INFO_FILE)
+        for game_uuid, game_info in game_info_dict.items():
+            if game_info["setup"]:
+                game = GameSetup(bot, json_data=game_info, register_views=False)
+            else:
+                game = Game(bot=bot, json_data=game_info, register_views=False)
+
+            # Check if this game has been idle for too long
+            if game.last_interaction_timestamp < two_weeks_ago:
+                game.remove_from_file()
+                for discord_message in game.discord_messages:
+                    message = await discord_message.get_message()
+                    # Remove any buttons
+                    await message.edit(view=None)
+                    await message.reply("This game has now been deleted due to inactivity.")
+
+            # If there is between 1-2 days left, send a notification that the game will be deleted in 2 days
+            elif 0 < (twelve_days_ago - game.last_interaction_timestamp) < (24 * 60 * 60):
+                for discord_message in game.discord_messages:
+                    message = await discord_message.get_message()
+                    await message.reply("This game will be deleted if it is not continued within 2 days.")
+    except Exception as e:
+        await send_error_message(bot, e)
 
 
 class CodenamesException(Exception):
@@ -383,12 +414,13 @@ class BaseGameClass(ABC):
 
 class GameSetup(BaseGameClass):
 
-    def __init__(self, bot: Bot, json_data=None):
+    def __init__(self, bot: Bot, json_data=None, register_views=True):
         super().__init__(bot)
         if json_data is not None:
             self.load_json(json_data)
-            for prefix in self.message_custom_id_prefixes:
-                self.bot.add_view(self.GameSetupView(self, prefix))
+            if register_views:
+                for prefix in self.message_custom_id_prefixes:
+                    self.bot.add_view(self.GameSetupView(self, prefix))
             return
 
         # Info referencing the messages that are displaying this object
@@ -403,6 +435,7 @@ class GameSetup(BaseGameClass):
             PlayerRole.BLUE_OPERATIVE: 0,
         }   # type: dict[str, int]
         self.random_role = []   # type: list[int]
+        self.last_interaction_timestamp = time.time()
 
     def load_json(self, json_data):
         self.uuid = json_data["uuid"]
@@ -410,6 +443,7 @@ class GameSetup(BaseGameClass):
         self.message_custom_id_prefixes = [prefix for prefix in json_data["message_custom_id_prefixes"]]
         self.roles = json_data["roles"]
         self.random_role = json_data["random_role"]
+        self.last_interaction_timestamp = json_data.get("last_interaction_timestamp", 0)
 
     def to_dict(self):
         return {
@@ -419,6 +453,7 @@ class GameSetup(BaseGameClass):
             "message_custom_id_prefixes": [prefix for prefix in self.message_custom_id_prefixes],
             "roles": self.roles,
             "random_role": self.random_role,
+            "last_interaction_timestamp": self.last_interaction_timestamp,
         }
 
     def _remove_user_role(self, user_id: int):
@@ -574,16 +609,18 @@ async def show_settings(ctx: Context):
 
 class Game(BaseGameClass):
 
-    def __init__(self, game_setup: GameSetup = None, bot: Bot = None, json_data=None):
+    def __init__(self, game_setup: GameSetup = None, bot: Bot = None, json_data=None, register_views=True):
         bot = bot if bot else game_setup.bot
         super().__init__(bot)
         self.finished = False
         if json_data is not None:
             self.load_json(json_data)
-            for role in self.roles.keys():
-                self.bot.add_view(self.GameView(self, role))
+            if register_views:
+                for role in self.roles.keys():
+                    self.bot.add_view(self.GameView(self, role))
             return
 
+        self.discord_messages = []
         self.turn = 1
         self.roles = game_setup.roles   # type: dict[str, int]
 
@@ -601,6 +638,7 @@ class Game(BaseGameClass):
         self.clue_word = ""
         self.clue_amount = 0
         self.max_word_length = self.get_max_word_length()
+        self.last_interaction_timestamp = time.time()
 
     def load_json(self, json_data):
         self.uuid = json_data.get("uuid")
@@ -616,6 +654,7 @@ class Game(BaseGameClass):
         self.clue_word = json_data.get("clue_word", "")
         self.clue_amount = json_data.get("clue_amount", 0)
         self.max_word_length = self.get_max_word_length()
+        self.last_interaction_timestamp = json_data.get("last_interaction_timestamp", 0)
 
     def to_dict(self):
         return {
@@ -631,6 +670,7 @@ class Game(BaseGameClass):
             "guess_count": self.guess_count,
             "clue_word": self.clue_word,
             "clue_amount": self.clue_amount,
+            "last_interaction_timestamp": self.last_interaction_timestamp,
         }
 
     def get_max_word_length(self):
@@ -957,6 +997,8 @@ class Game(BaseGameClass):
         self.remove_from_file()
 
     async def next_turn(self):
+        self.last_interaction_timestamp = time.time()
+
         # Make sure the current messages are up-to-date
         await self.update_messages(is_final_message_edit=True)
 

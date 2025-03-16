@@ -1316,6 +1316,8 @@ async def on_ready():
     scheduler.add_job(check_free_to_keep_games, CronTrigger(hour="7,19"))
     # Create a job that makes a backup of the dataset every 12 hours
     scheduler.add_job(create_backup, CronTrigger(hour="2,14"))
+    # Create a job that removes old Codenames games every day
+    scheduler.add_job(codenames.clean_up_old_games, CronTrigger(hour="18"), args=[bot])
 
     log("Finished on_ready()")
 
