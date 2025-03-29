@@ -160,6 +160,9 @@ CARD_TYPE_TO_RGB_COLOR = {
     CardType.NEUTRAL: (220, 215, 210),
 }
 
+class Emojis:
+    gear = "⚙️"
+
 
 class Card:
 
@@ -305,8 +308,7 @@ class UserSettings:
 
     async def get_embed(self):
         description = "Changes to these settings will take effect on new messages."
-        description += f"\nView format: **{self.view_format}**\n" \
-                       f"Confirmation on guesses: **{self.guess_confirmation}**"
+        description += f"\nConfirmation on guesses: **{self.guess_confirmation}**\n"
         embed = discord.Embed(
             title="Codenames settings",
             description=description,
@@ -314,14 +316,15 @@ class UserSettings:
         )
         return embed
 
-    async def set_setting(self, setting, value):
+    async def set_setting(self, setting, value, update_message=True):
         setattr(self, setting, value)
 
-        # Update the settings message
-        embed = await self.get_embed()
-        view = self.SettingsView(self)
-        message_object = await self.discord_message.get_message()
-        await message_object.edit(embed=embed, view=view)
+        if update_message:
+            # Update the settings message
+            embed = await self.get_embed()
+            view = self.SettingsView(self)
+            message_object = await self.discord_message.get_message()
+            await message_object.edit(embed=embed, view=view)
 
         self.save_to_file()
 
@@ -335,8 +338,8 @@ class UserSettings:
             super().__init__(timeout=None)
             self.settings = settings    # type: UserSettings
 
-            self.add_item(self.settings.ViewFormatSelectMenu(self.settings))
             self.add_item(Button(style=ButtonStyle.grey, label=f"Turn guess confirmation {invert_on_off(self.settings.guess_confirmation)}", custom_id=f"guess_confirmation"))
+            self.add_item(Button(style=ButtonStyle.grey, label="Visual settings", custom_id=f"visual_settings", emoji=Emojis.gear))
             self.add_item(Button(style=ButtonStyle.red, label="Close settings", custom_id=f"close_settings"))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -348,6 +351,9 @@ class UserSettings:
 
                 if button_id == "guess_confirmation":
                     await self.settings.set_setting("guess_confirmation", invert_on_off(self.settings.guess_confirmation))
+                elif button_id == "visual_settings":
+                    visual_settings = VisualSettings(self.settings)
+                    await visual_settings.send_message()
                 elif button_id == "close_settings":
                     await self.settings.delete_message()
             except CodenamesException as e:
@@ -357,9 +363,73 @@ class UserSettings:
 
             return True
 
+
+class VisualSettings:
+
+    def __init__(self, user_settings: UserSettings):
+        self.user_settings = user_settings
+        self.bot = self.user_settings.bot
+        self.user_id = self.user_settings.user_id
+        self.discord_message = None
+
+    async def send_message(self):
+        user = await get_discord_user(self.bot, self.user_id)
+        embed = await self.get_embed()
+        view = self.VisualSettingsView(self)
+        message_object = await user.send(embed=embed, view=view)    # type: discord.Message
+        self.discord_message = DiscordMessage(self.bot, message_object.channel.id, message_object.id)
+
+    async def get_embed(self):
+        description = "Changes to these settings will take effect on new messages."
+        description += f"\nView format: **{self.user_settings.view_format}**\n"
+        embed = discord.Embed(
+            title="Codenames visual settings",
+            description=description,
+            color=discord.Color.brand_green()
+        )
+        return embed
+
+    async def set_setting(self, setting, value):
+        await self.user_settings.set_setting(setting, value, update_message=False)
+
+        # Update this visual settings message
+        embed = await self.get_embed()
+        view = self.VisualSettingsView(self)
+        message_object = await self.discord_message.get_message()
+        await message_object.edit(embed=embed, view=view)
+
+    async def delete_message(self):
+        message_object = await self.discord_message.get_message()
+        await message_object.delete()
+
+    class VisualSettingsView(View):
+
+        def __init__(self, visual_settings):
+            super().__init__(timeout=None)
+            self.visual_settings = visual_settings    # type: VisualSettings
+
+            self.add_item(self.visual_settings.ViewFormatSelectMenu(self.visual_settings))
+            self.add_item(Button(style=ButtonStyle.red, label="Close settings", custom_id=f"close_settings"))
+
+        async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            try:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.defer()
+
+                button_id = interaction.data.get("custom_id")
+
+                if button_id == "close_settings":
+                    await self.visual_settings.delete_message()
+            except CodenamesException as e:
+                await interaction.followup.send(str(e), ephemeral=True)
+            except Exception as e:
+                await send_error_message(self.visual_settings.bot, e)
+
+            return True
+
     class ViewFormatSelectMenu(Select):
         def __init__(self, settings):
-            self.settings = settings
+            self.settings = settings    # type: VisualSettings
             options = []
             for key, value in vars(ViewFormat).items():
                 if key.isupper() and isinstance(value, str):
@@ -367,8 +437,14 @@ class UserSettings:
             super().__init__(placeholder="View format", options=options)
 
         async def callback(self, interaction: discord.Interaction):
-            selected_format = self.values[0]
-            await self.settings.set_setting("view_format", selected_format)
+            try:
+                selected_format = self.values[0]
+                await self.settings.set_setting("view_format", selected_format)
+            except CodenamesException as e:
+                # noinspection PyUnresolvedReferences
+                await interaction.followup.send(str(e), ephemeral=True)
+            except Exception as e:
+                await send_error_message(self.settings.bot, e)
 
 
 class BaseGameClass(ABC):
@@ -1149,7 +1225,7 @@ class Game(BaseGameClass):
                 self.add_item(Button(style=ButtonStyle.grey, label="Cover cards", custom_id=custom_id))
 
                 custom_id = f"{self.game.uuid}_{self.game.turn}_{self.role}_settings"
-                self.add_item(Button(style=ButtonStyle.grey, label="Settings", custom_id=custom_id))
+                self.add_item(Button(style=ButtonStyle.grey, label="Settings", custom_id=custom_id, emoji=Emojis.gear))
 
             elif self.view_format == ViewFormat.BUTTONS:
                 if self.role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished:
