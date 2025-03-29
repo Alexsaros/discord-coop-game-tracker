@@ -713,6 +713,11 @@ class Game(BaseGameClass):
         else:
             return [PlayerRole.BLUE_SPYMASTER, PlayerRole.BLUE_OPERATIVE, PlayerRole.RED_SPYMASTER, PlayerRole.RED_OPERATIVE]
 
+    def generate_image_for_user(self, user_id: int, reveal_covered=False):
+        role = self.get_user_role(user_id)
+        is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
+        return self.generate_image(is_spymaster=is_spymaster, reveal_covered=reveal_covered)
+
     def generate_image(self, is_spymaster=False, reveal_covered=False):
         # Load the image used to cover guessed cards
         card_cover_template = Image.open(CARD_COVER_FILENAME).convert("RGBA")
@@ -855,7 +860,7 @@ class Game(BaseGameClass):
         user_id = self.roles[role]
         return (await get_discord_user(self.bot, user_id)).global_name
 
-    def get_user_role(self, user_id):
+    def get_user_role(self, user_id: int):
         for role, role_user_id in self.roles.items():
             if user_id == role_user_id:
                 return role
@@ -1048,11 +1053,10 @@ class Game(BaseGameClass):
             self.history[role] = []
             embed = await self.get_embed(role, is_final_message_edit=False)
             user = await get_discord_user(self.bot, user_id)
-            is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
 
             settings = UserSettings(self.bot, user_id)
             if settings.view_format == ViewFormat.IMAGE:
-                file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
+                file = discord.File(self.generate_image_for_user(user_id), filename="codenames.png")
                 message_object = await user.send(embed=embed, view=self.GameView(self, role), file=file)
             else:
                 message_object = await user.send(embed=embed, view=self.GameView(self, role))
@@ -1077,12 +1081,11 @@ class Game(BaseGameClass):
 
         role = self.get_user_role(user_id)
         embed = await self.get_embed(role, is_final_message_edit=is_final_message_edit)
-        is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
         message_object = await discord_message.get_message()
 
         settings = UserSettings(self.bot, user_id)
         if settings.view_format == ViewFormat.IMAGE:
-            file = discord.File(self.generate_image(is_spymaster), filename="codenames.png")
+            file = discord.File(self.generate_image_for_user(user_id), filename="codenames.png")
             await message_object.edit(embed=embed, view=self.GameView(self, role), attachments=[file])
         elif settings.view_format == ViewFormat.BUTTONS:
             await message_object.edit(embed=embed, view=self.GameView(self, role))
@@ -1183,14 +1186,10 @@ class Game(BaseGameClass):
                     user_name = (await get_discord_user(self.game.bot, user_id)).global_name
                     action = interaction.data.get("custom_id").split("_")[-1]
                     if action == "reveal-cards":
-                        role = self.game.get_user_role(user_id)
-                        is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished
-                        file = discord.File(self.game.generate_image(is_spymaster, reveal_covered=True), filename="codenames.png")
+                        file = discord.File(self.game.generate_image_for_user(user_id, reveal_covered=True), filename="codenames.png")
                         await interaction.message.edit(attachments=[file])
                     elif action == "cover-cards":
-                        role = self.game.get_user_role(user_id)
-                        is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.game.finished
-                        file = discord.File(self.game.generate_image(is_spymaster, reveal_covered=False), filename="codenames.png")
+                        file = discord.File(self.game.generate_image_for_user(user_id, reveal_covered=False), filename="codenames.png")
                         await interaction.message.edit(attachments=[file])
                     elif action == "enter-clue":
                         # noinspection PyUnresolvedReferences
