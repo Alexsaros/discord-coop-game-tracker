@@ -393,8 +393,27 @@ class VisualSettings:
         user = await get_discord_user(self.bot, self.user_id)
         embed = await self.get_embed()
         view = self.VisualSettingsView(self)
-        message_object = await user.send(embed=embed, view=view)    # type: discord.Message
+        file = discord.File(self.generate_demo_image(self.user_id), filename="codenames.png")
+        message_object = await user.send(embed=embed, view=view, file=file)    # type: discord.Message
         self.discord_message = DiscordMessage(self.bot, message_object.channel.id, message_object.id)
+
+    def generate_demo_image(self, user_id):
+        # Get any colors the user might've set for the cards
+        settings = UserSettings(self.bot, user_id)
+        card_color_map = {
+            CardType.RED: settings.red_color,
+            CardType.BLUE: settings.blue_color,
+            CardType.ASSASSIN: settings.assassin_color,
+            CardType.NEUTRAL: settings.neutral_color,
+        }
+
+        cards = [Card("Red", CardType.RED), Card("Blue", CardType.BLUE), Card("Assassin", CardType.ASSASSIN),
+                 Card("Neutral", CardType.NEUTRAL),
+                 Card("Red guessed", CardType.RED), Card("Blue guess", CardType.BLUE),
+                 Card("Assassin guessed", CardType.ASSASSIN), Card("Neutral guessed", CardType.NEUTRAL)]
+        for i in range(4, 8):
+            cards[i].tapped = True
+        return Game.generate_image(cards=cards, is_spymaster=True, card_color_map=card_color_map, grid_size=(4, 2))
 
     @staticmethod
     def get_color(card_type, color):
@@ -421,11 +440,10 @@ class VisualSettings:
         await self.user_settings.set_setting(setting, value, update_message=False)
 
         if update_message:
-            # Update this visual settings message
-            embed = await self.get_embed()
-            view = self.VisualSettingsView(self)
+            # Update this visual settings message by re-sending it
             message_object = await self.discord_message.get_message()
-            await message_object.edit(embed=embed, view=view)
+            await self.send_message()
+            await message_object.delete()
 
     async def delete_message(self):
         message_object = await self.discord_message.get_message()
@@ -893,7 +911,13 @@ class Game(BaseGameClass):
             CardType.ASSASSIN: settings.assassin_color,
             CardType.NEUTRAL: settings.neutral_color,
         }
-        return self.generate_image(is_spymaster=is_spymaster, reveal_covered=reveal_covered, card_color_map=card_color_map)
+
+        # Figure out what color to make the background depending on whose turn it is now
+        current_role = self.turn_order[0]
+        current_color = PLAYER_ROLE_TO_COLOR[current_role]
+        background_color = self.get_card_color(current_color, card_color_map) + (BACKGROUND_TRANSPARENCY,)
+
+        return self.generate_image(cards=self.cards, is_spymaster=is_spymaster, reveal_covered=reveal_covered, card_color_map=card_color_map, background_color=background_color)
 
     @staticmethod
     def get_card_color(card_type, card_color_map=None):
@@ -902,7 +926,8 @@ class Game(BaseGameClass):
             card_color = CARD_TYPE_TO_RGB_COLOR[card_type]
         return card_color
 
-    def generate_image(self, is_spymaster=False, reveal_covered=False, card_color_map: dict[str, tuple] = None):
+    @staticmethod
+    def generate_image(cards: list[Card], is_spymaster=False, reveal_covered=False, card_color_map: dict[str, tuple] = None, grid_size=(5, 5), background_color=(0, 0, 0, 0)):
         # Load the image used to cover guessed cards
         card_cover_template = Image.open(CARD_COVER_FILENAME).convert("RGBA")
 
@@ -915,27 +940,21 @@ class Game(BaseGameClass):
         draw_mask = ImageDraw.Draw(card_mask)
         draw_mask.rounded_rectangle([(0, 0), CARD_SIZE], CARD_CORNER_RADIUS, fill=255)
 
-        # Figure out what color to make the background depending on whose turn it is now
-        current_role = self.turn_order[0]
-        current_color = PLAYER_ROLE_TO_COLOR[current_role]
-        background_color = self.get_card_color(current_color, card_color_map) + (BACKGROUND_TRANSPARENCY,)
-
         # Calculate and create a transparent image with the required size to hold the whole board
-        grid_size = 5
-        total_width = grid_size * (CARD_SIZE[0] + CARD_PADDING) - CARD_PADDING
-        total_height = grid_size * (CARD_SIZE[1] + CARD_PADDING) - CARD_PADDING
+        total_width = grid_size[0] * (CARD_SIZE[0] + CARD_PADDING) - CARD_PADDING
+        total_height = grid_size[1] * (CARD_SIZE[1] + CARD_PADDING) - CARD_PADDING
         board = Image.new("RGBA", (total_width, total_height), background_color)
 
-        for i, card in enumerate(self.cards):
+        for i, card in enumerate(cards):
             # Calculate this card's position in the image
-            row, col = divmod(i, grid_size)
+            row, col = divmod(i, grid_size[0])
             x = col * (CARD_SIZE[0] + CARD_PADDING)
             y = row * (CARD_SIZE[1] + CARD_PADDING)
 
             # Create the base of the card
-            bg_color = self.get_card_color(CardType.NEUTRAL, card_color_map)
+            bg_color = Game.get_card_color(CardType.NEUTRAL, card_color_map)
             if is_spymaster or card.tapped:
-                bg_color = self.get_card_color(card.type, card_color_map)
+                bg_color = Game.get_card_color(card.type, card_color_map)
             card_bg = Image.new("RGBA", CARD_SIZE, bg_color)
 
             # Prepare to start drawing on the card
@@ -974,7 +993,7 @@ class Game(BaseGameClass):
                     cover = cover.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
 
                 # The cover is colorized to match the card's type
-                cover_color = self.get_card_color(card.type, card_color_map)
+                cover_color = Game.get_card_color(card.type, card_color_map)
                 cover = ImageOps.colorize(
                     cover,
                     black="black",
