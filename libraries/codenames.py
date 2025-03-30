@@ -160,6 +160,7 @@ CARD_TYPE_TO_RGB_COLOR = {
     CardType.NEUTRAL: (220, 215, 210),
 }
 
+
 class Emojis:
     gear = "⚙️"
 
@@ -284,9 +285,17 @@ class UserSettings:
         self.view_format = user_settings.get("view_format", ViewFormat.IMAGE)
         self.guess_confirmation = user_settings.get("guess_confirmation", OnOff.OFF)
         self.red_color = user_settings.get("red_color", None)
+        if self.red_color is not None:
+            self.red_color = tuple(self.red_color)
         self.blue_color = user_settings.get("blue_color", None)
+        if self.blue_color is not None:
+            self.blue_color = tuple(self.blue_color)
         self.assassin_color = user_settings.get("assassin_color", None)
+        if self.assassin_color is not None:
+            self.assassin_color = tuple(self.assassin_color)
         self.neutral_color = user_settings.get("neutral_color", None)
+        if self.neutral_color is not None:
+            self.neutral_color = tuple(self.neutral_color)
 
     def to_dict(self):
         return {
@@ -875,9 +884,25 @@ class Game(BaseGameClass):
     def generate_image_for_user(self, user_id: int, reveal_covered=False):
         role = self.get_user_role(user_id)
         is_spymaster = role in [PlayerRole.RED_SPYMASTER, PlayerRole.BLUE_SPYMASTER] or self.finished
-        return self.generate_image(is_spymaster=is_spymaster, reveal_covered=reveal_covered)
 
-    def generate_image(self, is_spymaster=False, reveal_covered=False):
+        # Get any colors the user might've set for the cards
+        settings = UserSettings(self.bot, user_id)
+        card_color_map = {
+            CardType.RED: settings.red_color,
+            CardType.BLUE: settings.blue_color,
+            CardType.ASSASSIN: settings.assassin_color,
+            CardType.NEUTRAL: settings.neutral_color,
+        }
+        return self.generate_image(is_spymaster=is_spymaster, reveal_covered=reveal_covered, card_color_map=card_color_map)
+
+    @staticmethod
+    def get_card_color(card_type, card_color_map=None):
+        card_color = card_color_map.get(card_type, None)
+        if card_color is None:
+            card_color = CARD_TYPE_TO_RGB_COLOR[card_type]
+        return card_color
+
+    def generate_image(self, is_spymaster=False, reveal_covered=False, card_color_map: dict[str, tuple] = None):
         # Load the image used to cover guessed cards
         card_cover_template = Image.open(CARD_COVER_FILENAME).convert("RGBA")
 
@@ -893,7 +918,7 @@ class Game(BaseGameClass):
         # Figure out what color to make the background depending on whose turn it is now
         current_role = self.turn_order[0]
         current_color = PLAYER_ROLE_TO_COLOR[current_role]
-        background_color = CARD_TYPE_TO_RGB_COLOR[current_color] + (BACKGROUND_TRANSPARENCY,)
+        background_color = self.get_card_color(current_color, card_color_map) + (BACKGROUND_TRANSPARENCY,)
 
         # Calculate and create a transparent image with the required size to hold the whole board
         grid_size = 5
@@ -908,9 +933,9 @@ class Game(BaseGameClass):
             y = row * (CARD_SIZE[1] + CARD_PADDING)
 
             # Create the base of the card
-            bg_color = CARD_TYPE_TO_RGB_COLOR.get(CardType.NEUTRAL)
+            bg_color = self.get_card_color(CardType.NEUTRAL, card_color_map)
             if is_spymaster or card.tapped:
-                bg_color = CARD_TYPE_TO_RGB_COLOR.get(card.type)
+                bg_color = self.get_card_color(card.type, card_color_map)
             card_bg = Image.new("RGBA", CARD_SIZE, bg_color)
 
             # Prepare to start drawing on the card
@@ -949,7 +974,7 @@ class Game(BaseGameClass):
                     cover = cover.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
 
                 # The cover is colorized to match the card's type
-                cover_color = CARD_TYPE_TO_RGB_COLOR.get(card.type)
+                cover_color = self.get_card_color(card.type, card_color_map)
                 cover = ImageOps.colorize(
                     cover,
                     black="black",
