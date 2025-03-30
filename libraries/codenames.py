@@ -283,11 +283,19 @@ class UserSettings:
         user_settings = read_file_safe(USER_SETTINGS_FILE).get(self.user_id, {})
         self.view_format = user_settings.get("view_format", ViewFormat.IMAGE)
         self.guess_confirmation = user_settings.get("guess_confirmation", OnOff.OFF)
+        self.red_color = user_settings.get("red_color", None)
+        self.blue_color = user_settings.get("blue_color", None)
+        self.assassin_color = user_settings.get("assassin_color", None)
+        self.neutral_color = user_settings.get("neutral_color", None)
 
     def to_dict(self):
         return {
             "view_format": self.view_format,
             "guess_confirmation": self.guess_confirmation,
+            "red_color": self.red_color,
+            "blue_color": self.blue_color,
+            "assassin_color": self.assassin_color,
+            "neutral_color": self.neutral_color,
         }
 
     def save_to_file(self, json_dict=None):
@@ -379,9 +387,20 @@ class VisualSettings:
         message_object = await user.send(embed=embed, view=view)    # type: discord.Message
         self.discord_message = DiscordMessage(self.bot, message_object.channel.id, message_object.id)
 
+    @staticmethod
+    def get_color(card_type, color):
+        if color is None:
+            return CARD_TYPE_TO_RGB_COLOR[card_type]
+        else:
+            return color
+
     async def get_embed(self):
         description = "Changes to these settings will take effect on new messages."
-        description += f"\nView format: **{self.user_settings.view_format}**\n"
+        description += f"\nView format: **{self.user_settings.view_format}**\n" \
+                       f"Red card RGB values: **{self.get_color(CardType.RED, self.user_settings.red_color)}**\n" \
+                       f"Blue card RGB values: **{self.get_color(CardType.BLUE, self.user_settings.blue_color)}**\n" \
+                       f"Assassin card RGB values: **{self.get_color(CardType.ASSASSIN, self.user_settings.assassin_color)}**\n" \
+                       f"Neutral card RGB values: **{self.get_color(CardType.NEUTRAL, self.user_settings.neutral_color)}**\n"
         embed = discord.Embed(
             title="Codenames visual settings",
             description=description,
@@ -389,14 +408,15 @@ class VisualSettings:
         )
         return embed
 
-    async def set_setting(self, setting, value):
+    async def set_setting(self, setting, value, update_message=True):
         await self.user_settings.set_setting(setting, value, update_message=False)
 
-        # Update this visual settings message
-        embed = await self.get_embed()
-        view = self.VisualSettingsView(self)
-        message_object = await self.discord_message.get_message()
-        await message_object.edit(embed=embed, view=view)
+        if update_message:
+            # Update this visual settings message
+            embed = await self.get_embed()
+            view = self.VisualSettingsView(self)
+            message_object = await self.discord_message.get_message()
+            await message_object.edit(embed=embed, view=view)
 
     async def delete_message(self):
         message_object = await self.discord_message.get_message()
@@ -409,19 +429,47 @@ class VisualSettings:
             self.visual_settings = visual_settings    # type: VisualSettings
 
             self.add_item(self.visual_settings.ViewFormatSelectMenu(self.visual_settings))
+            self.add_item(Button(style=ButtonStyle.grey, label="Set red card color", custom_id="set_red"))
+            self.add_item(Button(style=ButtonStyle.grey, label="Set blue card color", custom_id="set_blue"))
+            self.add_item(Button(style=ButtonStyle.grey, label="Set assassin card color", custom_id="set_assassin"))
+            self.add_item(Button(style=ButtonStyle.grey, label="Set neutral card color", custom_id="set_neutral"))
+            self.add_item(Button(style=ButtonStyle.grey, label="Reset colors to default", custom_id="reset_colors"))
             self.add_item(Button(style=ButtonStyle.red, label="Close settings", custom_id=f"close_settings"))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
             try:
-                # noinspection PyUnresolvedReferences
-                await interaction.response.defer()
-
                 button_id = interaction.data.get("custom_id")
 
-                if button_id == "close_settings":
+                if button_id == "set_red":
+                    # noinspection PyUnresolvedReferences
+                    await interaction.response.send_modal(self.visual_settings.ColorModal(self.visual_settings, CardType.RED))
+                elif button_id == "set_blue":
+                    # noinspection PyUnresolvedReferences
+                    await interaction.response.send_modal(self.visual_settings.ColorModal(self.visual_settings, CardType.BLUE))
+                elif button_id == "set_assassin":
+                    # noinspection PyUnresolvedReferences
+                    await interaction.response.send_modal(self.visual_settings.ColorModal(self.visual_settings, CardType.ASSASSIN))
+                elif button_id == "set_neutral":
+                    # noinspection PyUnresolvedReferences
+                    await interaction.response.send_modal(self.visual_settings.ColorModal(self.visual_settings, CardType.NEUTRAL))
+                elif button_id == "reset_colors":
+                    for card_type in [CardType.RED, CardType.BLUE, CardType.ASSASSIN]:
+                        await self.visual_settings.set_setting(f"{card_type}_color", None, update_message=False)
+                    await self.visual_settings.set_setting(f"{CardType.NEUTRAL}_color", None)   # Only update the message when the last color has been updated
+                elif button_id == "close_settings":
                     await self.visual_settings.delete_message()
+
+                # noinspection PyUnresolvedReferences
+                if not interaction.response.is_done():
+                    # noinspection PyUnresolvedReferences
+                    await interaction.response.defer()
             except CodenamesException as e:
-                await interaction.followup.send(str(e), ephemeral=True)
+                # noinspection PyUnresolvedReferences
+                if interaction.response.is_done():
+                    await interaction.followup.send(str(e), ephemeral=True)
+                else:
+                    # noinspection PyUnresolvedReferences
+                    await interaction.response.send_message(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.visual_settings.bot, e)
 
@@ -442,6 +490,41 @@ class VisualSettings:
                 await self.settings.set_setting("view_format", selected_format)
             except CodenamesException as e:
                 # noinspection PyUnresolvedReferences
+                await interaction.followup.send(str(e), ephemeral=True)
+            except Exception as e:
+                await send_error_message(self.settings.bot, e)
+
+    class ColorModal(Modal, title="Enter the RGB values of the desired color"):
+        r = ui.TextInput(label="Red color value")
+        g = ui.TextInput(label="Green color value")
+        b = ui.TextInput(label="Blue color value")
+
+        def __init__(self, settings, card_type: str):
+            super().__init__()
+            self.settings = settings    # type: VisualSettings
+            self.card_type = card_type
+
+        @staticmethod
+        def check_color_constraints(color_value: str, color_name: str):
+            try:
+                color_value = int(color_value)
+            except ValueError:
+                raise CodenamesException(f"The {color_name} color value '{color_value}' is not a valid number.")
+            if color_value < 0 or color_value > 255:
+                raise CodenamesException(f"The {color_name} color value '{color_value}' must be between 0 and 255.")
+
+        async def on_submit(self, interaction: discord.Interaction):
+            try:
+                # noinspection PyUnresolvedReferences
+                await interaction.response.defer()
+
+                self.check_color_constraints(self.r.value, "red")
+                self.check_color_constraints(self.g.value, "green")
+                self.check_color_constraints(self.b.value, "blue")
+
+                new_color = (int(self.r.value), int(self.g.value), int(self.b.value))
+                await self.settings.set_setting(f"{self.card_type}_color", new_color)
+            except CodenamesException as e:
                 await interaction.followup.send(str(e), ephemeral=True)
             except Exception as e:
                 await send_error_message(self.settings.bot, e)
