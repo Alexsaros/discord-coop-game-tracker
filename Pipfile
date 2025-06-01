@@ -11,8 +11,8 @@ requests = "*"
 flask = "*"
 PyNaCl = "*"
 python-dateutil = "*"
-beautifulsoup4 = "*"
 pillow = "*"
+playwright = "*"
 
 [requires]
 python_version = "3.*"

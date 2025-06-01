@@ -18,10 +18,10 @@ from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from dateutil import parser
-from bs4 import BeautifulSoup
 import random
 import hmac
 import hashlib
+from playwright.async_api import async_playwright
 
 from libraries import codenames
 
@@ -416,7 +416,7 @@ class FreeGameDeal:
         self.url = json_data.get("url", "")
         self.type = json_data.get("type", "")
 
-    def to_json(self):
+    def to_json(self) -> dict[str, str]:
         return {
             "deal_id": self.deal_id,
             "game_name": self.game_name,
@@ -1155,46 +1155,58 @@ def search_steam_for_game(game_name):
     return game_match
 
 
-async def get_free_to_keep_games() -> dict[str, str]:
+async def get_free_to_keep_games() -> dict[str, dict[str, str]]:
     # URL for free deals on GG.deals
     url = "https://gg.deals/deals/pc/?minDiscount=100&minRating=0"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.5938.132 Safari/537.36"
-    }
-
-    response = requests.get(url, headers=headers)
-    try:
-        response.raise_for_status()
-    except Exception as e:
-        await send_error_message(f"Error! Failed to get free-to-keep games from GG.deals. {e}")
-        return {}
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    games = soup.find_all("div", class_="game-item-v2")
-
     free_games = {}
-    for game in games:
-        game_name = game.find("a", class_="game-info-title").text.strip()
 
-        shop_name = game.get("data-shop-name")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            )
+        )
 
-        deal_end_time = game.find("time", class_="timesince")
-        deal_end_time = deal_end_time["datetime"] if deal_end_time else ""
+        await page.goto(url, timeout=30_000)
+        await page.wait_for_selector("div.game-item-v2", timeout=30_000)
 
-        shop_link = "https://gg.deals" + game.find("a", class_="shop-link")["href"] if game.find("a", class_="shop-link") else ""
+        game_elements = await page.query_selector_all("div.game-item-v2")
+        for g in game_elements:
+            title_el = await g.query_selector("a.game-info-title")
+            if not title_el:
+                continue
+            game_name = (await title_el.inner_text()).strip()
 
-        deal_path = game.find("a", class_="game-info-title")["href"]
-        deal_type = deal_path.split("/")[1]
+            shop_name = await g.get_attribute("data-shop-name") or ""
 
-        free_game = FreeGameDeal()
-        free_game.deal_id = deal_path
-        free_game.game_name = game_name
-        free_game.shop_name = shop_name
-        free_game.expiry_datetime = deal_end_time
-        free_game.url = shop_link
-        free_game.type = deal_type
+            time_el = await g.query_selector("time.timesince")
+            deal_end_time = await time_el.get_attribute("datetime") if time_el else ""
 
-        free_games[free_game.deal_id] = free_game.to_json()
+            shop_link_el = await g.query_selector("a.shop-link")
+            if shop_link_el:
+                relative = await shop_link_el.get_attribute("href") or ""
+                shop_link = "https://gg.deals" + relative
+            else:
+                shop_link = ""
+
+            deal_path = await title_el.get_attribute("href") or ""
+            parts = [seg for seg in deal_path.split("/") if seg]
+            deal_type = parts[0] if parts else ""
+
+            fg = FreeGameDeal()
+            fg.deal_id = deal_path
+            fg.game_name = game_name
+            fg.shop_name = shop_name
+            fg.expiry_datetime = deal_end_time
+            fg.url = shop_link
+            fg.type = deal_type
+
+            free_games[fg.deal_id] = fg.to_json()
+
+        await browser.close()
 
     return free_games
 
@@ -1261,18 +1273,21 @@ async def check_free_to_keep_games(wait=True):
         wait_time = random.randint(0, 3600)
         await asyncio.sleep(wait_time)
 
-    # Get the deals that we've already gotten earlier
-    old_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)     # type: dict[str, int, dict]
+    try:
+        # Get the deals that we've already gotten earlier
+        old_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)     # type: dict[str, int, dict]
 
-    new_deals = await get_free_to_keep_games()
-    for new_deal in new_deals.keys():
-        # If this deal is new, send a message to users who want to be notified
-        if new_deal not in old_deals.keys():
-            await notify_users_free_to_keep_game(FreeGameDeal(json_data=new_deals[new_deal]))
+        new_deals = await get_free_to_keep_games()
+        for new_deal in new_deals.keys():
+            # If this deal is new, send a message to users who want to be notified
+            if new_deal not in old_deals.keys():
+                await notify_users_free_to_keep_game(FreeGameDeal(json_data=new_deals[new_deal]))
 
-    # Save the deals we just retrieved
-    with open(FREE_TO_KEEP_GAMES_FILE, "w") as file:
-        json.dump(new_deals, file, indent=4)
+        # Save the deals we just retrieved
+        with open(FREE_TO_KEEP_GAMES_FILE, "w") as file:
+            json.dump(new_deals, file, indent=4)
+    except Exception as e:
+        await send_error_message(e)
 
 
 def parse_boolean(boolean_string):
