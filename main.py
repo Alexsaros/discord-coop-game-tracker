@@ -31,6 +31,7 @@ PUBLIC_KEY = os.getenv("PUBLIC_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 GITHUB_WEBHOOK_SECRET_TOKEN = os.getenv("GITHUB_WEBHOOK_SECRET_TOKEN")
+DEVELOPER_USER_ID = os.getenv("DEVELOPER_USER_ID")
 
 ITAD_CLIENT_ID = os.getenv("ITAD_CLIENT_ID")
 ITAD_CLIENT_SECRET = os.getenv("ITAD_CLIENT_SECRET")
@@ -293,11 +294,28 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=CustomHelpC
 scheduler = AsyncIOScheduler()
 
 
+async def get_discord_user(user_id) -> discord.User:
+    user = bot.get_user(int(user_id))
+    if user is None:
+        user = await bot.fetch_user(int(user_id))
+    return user
+
+
 def log(message):
     message = str(message)
     print(message)
     with open("log.log", "a", encoding="utf-8") as f:
         f.write(message + "\n")
+
+
+async def send_error_message(exception):
+    if isinstance(exception, Exception):
+        message = ''.join(traceback.format_exception(exception))
+        log(message)
+    else:
+        message = str(exception)
+    developer = await get_discord_user(DEVELOPER_USER_ID)
+    await developer.send(f"```{message}```")
 
 
 class GameData:
@@ -765,7 +783,7 @@ def generate_overview_embeds(server_id):
     return embeds
 
 
-def generate_list_embeds(server_id):
+async def generate_list_embeds(server_id):
     server_id = str(server_id)
 
     dataset = read_dataset()
@@ -789,7 +807,7 @@ def generate_list_embeds(server_id):
             try:
                 non_voters.remove(name)
             except ValueError as e:
-                log(f"Error: failed to remove {name} from the members list: {e}")
+                await send_error_message(f"Error: failed to remove {name} from the members list: {e}")
         non_voters_text = get_users_aliases_string(server_dataset, non_voters)
 
         game_text = f"{game_data.id} -"
@@ -911,7 +929,7 @@ async def get_live_message_object(server_id, message_type):
     # Get the Discord message object
     message_id = server_dataset.get(f"{message_type}_message_id")
     if message_id in (None, 0):
-        log(f"Error: {message_type}_message_id not found, but {message_type}_channel_id is present for server {server_id}.")
+        await send_error_message(f"Error: {message_type}_message_id not found, but {message_type}_channel_id is present for server {server_id}.")
         return None
 
     try:
@@ -944,7 +962,7 @@ async def update_list(server_id):
     if list_message is None:
         return
 
-    updated_list_embed = generate_list_embeds(server_id)[0]
+    updated_list_embed = (await generate_list_embeds(server_id))[0]
     if updated_list_embed is not None:
         await list_message.edit(embed=updated_list_embed)
 
@@ -1009,7 +1027,7 @@ def get_steam_game_data(steam_game_id):
     return steam_game_data
 
 
-def get_game_price(steam_game_id):
+async def get_game_price(steam_game_id):
     """
     Uses the Steam API to search for info on the given Steam game ID.
     Returns a dictionary containing the "id", "price_current" and "price_original" keys.
@@ -1040,7 +1058,7 @@ def get_game_price(steam_game_id):
     else:
         price_currency = price_overview["currency"]
         if price_currency != "EUR":
-            log(f"Error: received currency {price_currency} for game {game_name}.")
+            await send_error_message(f"Error: received currency {price_currency} for game {game_name}.")
         else:
             price_current = price_overview["final"] / 100
             price_original = price_overview["initial"] / 100
@@ -1086,7 +1104,7 @@ async def update_dataset_steam_prices():
         game_dataset = server_dataset.get("games", {})
         for game_dict in game_dataset.values():
             steam_id = game_dict.get("steam_id", 0)
-            steam_game_info = get_game_price(steam_id)
+            steam_game_info = await get_game_price(steam_id)
             if steam_game_info is not None:
                 game_dict["price_current"] = steam_game_info["price_current"]
                 game_dict["price_original"] = steam_game_info["price_original"]
@@ -1137,7 +1155,7 @@ def search_steam_for_game(game_name):
     return game_match
 
 
-def get_free_to_keep_games() -> dict[str, str]:
+async def get_free_to_keep_games() -> dict[str, str]:
     # URL for free deals on GG.deals
     url = "https://gg.deals/deals/pc/?minDiscount=100&minRating=0"
     headers = {
@@ -1148,7 +1166,7 @@ def get_free_to_keep_games() -> dict[str, str]:
     try:
         response.raise_for_status()
     except Exception as e:
-        log(f"Error! Failed to get free-to-keep games from GG.deals. {e}")
+        await send_error_message(f"Error! Failed to get free-to-keep games from GG.deals. {e}")
         return {}
 
     soup = BeautifulSoup(response.text, "html.parser")
@@ -1246,7 +1264,7 @@ async def check_free_to_keep_games(wait=True):
     # Get the deals that we've already gotten earlier
     old_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)     # type: dict[str, int, dict]
 
-    new_deals = get_free_to_keep_games()
+    new_deals = await get_free_to_keep_games()
     for new_deal in new_deals.keys():
         # If this deal is new, send a message to users who want to be notified
         if new_deal not in old_deals.keys():
@@ -1367,7 +1385,7 @@ async def on_reaction_add(reaction, user):
     if embed.color == EDIT_GAME_EMBED_COLOR:
         # Split the title into (game_id, game_name)
         if " - " not in embed.title:
-            log(f"Error: incorrect game embed title format: \"{embed.title}\".")
+            await send_error_message(f"Error: incorrect game embed title format: \"{embed.title}\".")
             return
         game_id, game_name = embed.title.split(" - ", 1)
 
@@ -1488,7 +1506,7 @@ async def add_game(ctx, game_name):
     if steam_game_info is not None and \
             "id" in steam_game_info:
         game_data.steam_id = steam_game_info["id"]
-        game_price = get_game_price(game_data.steam_id)
+        game_price = await get_game_price(game_data.steam_id)
         if game_price is not None:
             game_data.price_current = game_price["price_current"]
             game_data.price_original = game_price["price_original"]
@@ -1663,7 +1681,7 @@ async def list_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
-    list_embed = generate_list_embeds(server_id)[0]
+    list_embed = (await generate_list_embeds(server_id))[0]
     if list_embed is None:
         await ctx.send("No games registered for this server yet.")
         return
@@ -1736,7 +1754,7 @@ async def play_without(ctx, username):
             try:
                 non_voters.remove(name)
             except ValueError as e:
-                log(f"Error: failed to remove {name} from the members list: {e}")
+                await send_error_message(f"Error: failed to remove {name} from the members list: {e}")
         non_voters_text = get_users_aliases_string(server_dataset, non_voters)
 
         game_text = f"{game_data.id} -"
@@ -1931,7 +1949,7 @@ async def set_steam_id(ctx, game_name, steam_id):
 
     # Update the "steam_id" field, retrieve the price again, and save the new game data
     game_data.steam_id = steam_id
-    steam_game_info = get_game_price(steam_id)
+    steam_game_info = await get_game_price(steam_id)
     # Default to no price if the Steam game couldn't be found
     game_data.price_current = -1
     game_data.price_original = -1
@@ -2107,7 +2125,7 @@ async def play_audio(voice_channel, audio_path):
         while voice_client.is_playing():
             await asyncio.sleep(1)
     except Exception as e:
-        log(f"Error: failed to play audio. {e}")
+        await send_error_message(f"Error: failed to play audio. {e}")
 
     await voice_client.disconnect()
 
@@ -2161,11 +2179,11 @@ async def set_bedtime(ctx, bedtime):
         try:
             scheduler.remove_job(old_job_id)
         except JobLookupError as e:
-            log(f"Error! Unable to remove scheduled bedtime job with id {old_job_id}. {e}")
+            await send_error_message(f"Error! Unable to remove scheduled bedtime job with id {old_job_id}. {e}")
         try:
             scheduler.remove_job(old_job_late_id)
         except JobLookupError as e:
-            log(f"Error! Unable to remove scheduled late bedtime job with id {old_job_late_id}. {e}")
+            await send_error_message(f"Error! Unable to remove scheduled late bedtime job with id {old_job_late_id}. {e}")
 
     # If a negative value was given, remove the bedtime alarm
     if hour < 0 or minute < 0:
@@ -2420,6 +2438,7 @@ async def on_command_error(ctx, error):
     with open("err.log", "a", encoding="utf-8") as f:
         f.write(f"{timestamp}\n{error}\n{traceback.format_exception(error)}\n\n")
     traceback.print_exception(error)
+    await send_error_message(error)
     raise
 
 
@@ -2432,6 +2451,7 @@ async def on_error(event, *args, **kwargs):
     timestamp = time.time()
     with open("err.log", "a", encoding="utf-8") as f:
         f.write(f"{timestamp}\n{event}\n{args}\n{kwargs}\n\n")
+    await send_error_message(Exception(f"Encountered error in {event}."))
     raise
 
 
