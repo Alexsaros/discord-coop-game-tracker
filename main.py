@@ -13,6 +13,7 @@ import shutil
 from io import BytesIO
 from discord.ext import commands
 from discord.ext.commands import CommandInvokeError
+from discord.ui import View, Button
 from dotenv import load_dotenv
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -943,14 +944,57 @@ async def get_live_message_object(server_id, message_type):
         return None
 
 
-def get_current_page_from_embed_title(message: discord.Message) -> int:
+class PageButtonsView(View):
+
+    def __init__(self, message: discord.Message, update_function: callable, function_argument):
+        super().__init__(timeout=None)
+        self.message = message
+        self.update_function = update_function
+        self.function_argument = function_argument
+        message_id = message.id
+
+        self.current_page = get_current_page_from_message_embed_title(message)
+        total_pages = get_total_pages_from_message_embed_title(message)
+        disabled_previous = self.current_page <= 1
+        disabled_next = self.current_page >= total_pages
+
+        self.add_item(Button(style=discord.ButtonStyle.blurple, label="Previous page", custom_id=f"{message_id}_previousPage", disabled=disabled_previous))
+        self.add_item(Button(style=discord.ButtonStyle.blurple, label="Next page", custom_id=f"{message_id}_nextPage", disabled=disabled_next))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        try:
+            # noinspection PyUnresolvedReferences
+            await interaction.response.defer()
+
+            action = interaction.data.get("custom_id").split("_")[-1]
+            new_page = self.current_page
+            if action == "previousPage":
+                new_page -= 1
+            elif action == "nextPage":
+                new_page += 1
+
+            await self.update_function(self.function_argument, new_page)
+        except Exception as e:
+            await send_error_message(e)
+
+        return True
+
+
+def get_current_page_from_message_embed_title(message: discord.Message) -> int:
     embed_title = message.embeds[0].title
     page_info = embed_title.split("page ")[-1].rstrip(")")
     current_page = int(page_info.split("/")[0])
     return max(current_page, 1)
 
 
-async def update_overview(server_id):
+def get_total_pages_from_message_embed_title(message: discord.Message) -> int:
+    embed_title = message.embeds[0].title
+    page_info = embed_title.split("page ")[-1].rstrip(")")
+    total_pages = int(page_info.split("/")[-1])
+    return total_pages
+
+
+async def update_overview(server_id, page_index: int = None):
     server_id = str(server_id)
 
     overview_message = await get_live_message_object(server_id, "overview")
@@ -958,14 +1002,17 @@ async def update_overview(server_id):
         return
 
     overview_embeds = generate_overview_embeds(server_id)
-    current_page = get_current_page_from_embed_title(overview_message)
-    page_index = min(current_page, len(overview_embeds)) - 1
+    if page_index is None:
+        current_page = get_current_page_from_message_embed_title(overview_message)
+        page_index = min(current_page, len(overview_embeds)) - 1
     updated_overview_embed = overview_embeds[page_index]
+
+    page_buttons_view = PageButtonsView(overview_message, update_overview, server_id)
     if updated_overview_embed is not None:
-        await overview_message.edit(embed=updated_overview_embed)
+        await overview_message.edit(embed=updated_overview_embed, view=page_buttons_view)
 
 
-async def update_list(server_id):
+async def update_list(server_id, page_index: int = None):
     server_id = str(server_id)
 
     list_message = await get_live_message_object(server_id, "list")
@@ -973,11 +1020,14 @@ async def update_list(server_id):
         return
 
     list_embeds = (await generate_list_embeds(server_id))
-    current_page = get_current_page_from_embed_title(list_message)
-    page_index = min(current_page, len(list_embeds)) - 1
+    if page_index is None:
+        current_page = get_current_page_from_message_embed_title(list_message)
+        page_index = min(current_page, len(list_embeds)) - 1
     updated_list_embed = list_embeds[page_index]
+
+    page_buttons_view = PageButtonsView(list_message, update_overview, server_id)
     if updated_list_embed is not None:
-        await list_message.edit(embed=updated_list_embed)
+        await list_message.edit(embed=updated_list_embed, view=page_buttons_view)
 
 
 async def update_hall_of_game(server_id):
