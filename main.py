@@ -943,6 +943,13 @@ async def get_live_message_object(server_id, message_type):
         return None
 
 
+def get_current_page_from_embed_title(message: discord.Message) -> int:
+    embed_title = message.embeds[0].title
+    page_info = embed_title.split("page ")[-1].rstrip(")")
+    current_page = int(page_info.split("/")[0])
+    return max(current_page, 1)
+
+
 async def update_overview(server_id):
     server_id = str(server_id)
 
@@ -950,7 +957,10 @@ async def update_overview(server_id):
     if overview_message is None:
         return
 
-    updated_overview_embed = generate_overview_embeds(server_id)[0]
+    overview_embeds = generate_overview_embeds(server_id)
+    current_page = get_current_page_from_embed_title(overview_message)
+    page_index = min(current_page, len(overview_embeds)) - 1
+    updated_overview_embed = overview_embeds[page_index]
     if updated_overview_embed is not None:
         await overview_message.edit(embed=updated_overview_embed)
 
@@ -962,7 +972,10 @@ async def update_list(server_id):
     if list_message is None:
         return
 
-    updated_list_embed = (await generate_list_embeds(server_id))[0]
+    list_embeds = (await generate_list_embeds(server_id))
+    current_page = get_current_page_from_embed_title(list_message)
+    page_index = min(current_page, len(list_embeds)) - 1
+    updated_list_embed = list_embeds[page_index]
     if updated_list_embed is not None:
         await list_message.edit(embed=updated_list_embed)
 
