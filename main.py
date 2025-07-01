@@ -1025,7 +1025,7 @@ async def update_list(server_id, page_index: int = None):
         page_index = min(current_page, len(list_embeds)) - 1
     updated_list_embed = list_embeds[page_index]
 
-    page_buttons_view = PageButtonsView(list_message, update_overview, server_id)
+    page_buttons_view = PageButtonsView(list_message, update_list, server_id)
     if updated_list_embed is not None:
         await list_message.edit(embed=updated_list_embed, view=page_buttons_view)
 
@@ -1743,6 +1743,8 @@ async def overview(ctx):
         return
 
     message = await ctx.send(embed=overview_embed)
+    page_buttons_view = PageButtonsView(message, update_overview, server_id)
+    await message.edit(embed=overview_embed, view=page_buttons_view)
 
     dataset = read_dataset()
 
@@ -1765,6 +1767,8 @@ async def list_games(ctx):
         return
 
     message = await ctx.send(embed=list_embed)
+    page_buttons_view = PageButtonsView(message, update_list, server_id)
+    await message.edit(embed=list_embed, view=page_buttons_view)
 
     dataset = read_dataset()
     # Store the new message ID
