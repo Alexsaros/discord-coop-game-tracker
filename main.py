@@ -895,10 +895,10 @@ def get_discord_guild_object(server_id):
     return guild_object
 
 
-async def get_live_message_object(server_id, message_type):
+async def get_live_message_object(server_id, message_type: str):
     """
     Gets the message object for one of the live updating messages.
-    Currently supports "overview" and "list" as message types.
+    Currently supports "overview", "list", and "hall_of_game" as message types.
     Returns None if not found.
     """
     server_id = str(server_id)
@@ -1384,6 +1384,15 @@ def load_scheduler_jobs():
             scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[username, server_id, True], id=bedtime_late_job_id)
 
 
+async def load_views():
+    dataset = read_dataset()
+    for server_id in dataset.keys():
+        overview_message = await get_live_message_object(server_id, "overview")
+        bot.add_view(PageButtonsView(overview_message, update_overview, server_id))
+        list_message = await get_live_message_object(server_id, "list")
+        bot.add_view(PageButtonsView(list_message, update_list, server_id))
+
+
 @bot.event
 async def on_connect():
     log(f"\n\n\n{datetime.datetime.now()}")
@@ -1391,6 +1400,8 @@ async def on_connect():
 
     # Load scheduled jobs that were saved during earlier runs
     load_scheduler_jobs()
+
+    await load_views()
 
     codenames.load_games(bot)
 
