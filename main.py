@@ -982,6 +982,8 @@ class PageButtonsView(View):
 
 def get_current_page_from_message_embed_title(message: discord.Message) -> int:
     embed_title = message.embeds[0].title
+    if "(page " not in embed_title:
+        return 1
     page_info = embed_title.split("page ")[-1].rstrip(")")
     current_page = int(page_info.split("/")[0])
     return max(current_page, 1)
@@ -989,6 +991,8 @@ def get_current_page_from_message_embed_title(message: discord.Message) -> int:
 
 def get_total_pages_from_message_embed_title(message: discord.Message) -> int:
     embed_title = message.embeds[0].title
+    if "(page " not in embed_title:
+        return 1
     page_info = embed_title.split("page ")[-1].rstrip(")")
     total_pages = int(page_info.split("/")[-1])
     return total_pages
