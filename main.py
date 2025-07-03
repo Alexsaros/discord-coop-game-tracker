@@ -946,15 +946,13 @@ async def get_live_message_object(server_id, message_type: str):
 
 class PageButtonsView(View):
 
-    def __init__(self, message: discord.Message, update_function: callable, function_argument):
+    def __init__(self, embed_title: str, message_id: int, update_function: callable, function_argument):
         super().__init__(timeout=None)
-        self.message = message
         self.update_function = update_function
         self.function_argument = function_argument
-        message_id = message.id
 
-        self.current_page = get_current_page_from_message_embed_title(message)
-        total_pages = get_total_pages_from_message_embed_title(message)
+        self.current_page = get_current_page_from_message_title(embed_title)
+        total_pages = get_total_pages_from_message_title(embed_title)
         disabled_previous = self.current_page <= 1
         disabled_next = self.current_page >= total_pages
 
@@ -980,8 +978,7 @@ class PageButtonsView(View):
         return True
 
 
-def get_current_page_from_message_embed_title(message: discord.Message) -> int:
-    embed_title = message.embeds[0].title
+def get_current_page_from_message_title(embed_title: str) -> int:
     if "(page " not in embed_title:
         return 1
     page_info = embed_title.split("page ")[-1].rstrip(")")
@@ -989,8 +986,7 @@ def get_current_page_from_message_embed_title(message: discord.Message) -> int:
     return max(current_page, 1)
 
 
-def get_total_pages_from_message_embed_title(message: discord.Message) -> int:
-    embed_title = message.embeds[0].title
+def get_total_pages_from_message_title(embed_title: str) -> int:
     if "(page " not in embed_title:
         return 1
     page_info = embed_title.split("page ")[-1].rstrip(")")
@@ -1007,11 +1003,11 @@ async def update_overview(server_id, page_number: int = None):
 
     overview_embeds = generate_overview_embeds(server_id)
     if page_number is None:
-        current_page = get_current_page_from_message_embed_title(overview_message)
+        current_page = get_current_page_from_message_title(overview_message.embeds[0].title)
         page_number = min(current_page, len(overview_embeds))
     updated_overview_embed = overview_embeds[page_number - 1]
 
-    page_buttons_view = PageButtonsView(overview_message, update_overview, server_id)
+    page_buttons_view = PageButtonsView(updated_overview_embed.title, overview_message.id, update_overview, server_id)
     if updated_overview_embed is not None:
         await overview_message.edit(embed=updated_overview_embed, view=page_buttons_view)
 
@@ -1025,11 +1021,11 @@ async def update_list(server_id, page_number: int = None):
 
     list_embeds = (await generate_list_embeds(server_id))
     if page_number is None:
-        current_page = get_current_page_from_message_embed_title(list_message)
+        current_page = get_current_page_from_message_title(list_message.embeds[0].title)
         page_number = min(current_page, len(list_embeds))
     updated_list_embed = list_embeds[page_number - 1]
 
-    page_buttons_view = PageButtonsView(list_message, update_list, server_id)
+    page_buttons_view = PageButtonsView(updated_list_embed.title, list_message.id, update_list, server_id)
     if updated_list_embed is not None:
         await list_message.edit(embed=updated_list_embed, view=page_buttons_view)
 
@@ -1392,9 +1388,9 @@ async def load_views():
     dataset = read_dataset()
     for server_id in dataset.keys():
         overview_message = await get_live_message_object(server_id, "overview")
-        bot.add_view(PageButtonsView(overview_message, update_overview, server_id))
+        bot.add_view(PageButtonsView(overview_message.embeds[0].title, overview_message.id, update_overview, server_id))
         list_message = await get_live_message_object(server_id, "list")
-        bot.add_view(PageButtonsView(list_message, update_list, server_id))
+        bot.add_view(PageButtonsView(list_message.embeds[0].title, list_message.id, update_list, server_id))
 
 
 @bot.event
@@ -1759,7 +1755,7 @@ async def overview(ctx):
         return
 
     message = await ctx.send(embed=overview_embed)
-    page_buttons_view = PageButtonsView(message, update_overview, server_id)
+    page_buttons_view = PageButtonsView(overview_embed.title, message.id, update_overview, server_id)
     await message.edit(embed=overview_embed, view=page_buttons_view)
 
     dataset = read_dataset()
@@ -1783,7 +1779,7 @@ async def list_games(ctx):
         return
 
     message = await ctx.send(embed=list_embed)
-    page_buttons_view = PageButtonsView(message, update_list, server_id)
+    page_buttons_view = PageButtonsView(list_embed.title, message.id, update_list, server_id)
     await message.edit(embed=list_embed, view=page_buttons_view)
 
     dataset = read_dataset()
