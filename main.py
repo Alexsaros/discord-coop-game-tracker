@@ -957,6 +957,7 @@ class PageButtonsView(View):
         disabled_next = self.current_page >= total_pages
 
         self.add_item(Button(style=discord.ButtonStyle.blurple, label="Previous page", custom_id=f"{message_id}_previousPage", disabled=disabled_previous))
+        self.add_item(Button(style=discord.ButtonStyle.grey, label=f"Page {self.current_page}/{total_pages}", custom_id=f"{message_id}_pageNumber", disabled=True))
         self.add_item(Button(style=discord.ButtonStyle.blurple, label="Next page", custom_id=f"{message_id}_nextPage", disabled=disabled_next))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
