@@ -998,7 +998,7 @@ def get_total_pages_from_message_embed_title(message: discord.Message) -> int:
     return total_pages
 
 
-async def update_overview(server_id, page_index: int = None):
+async def update_overview(server_id, page_number: int = None):
     server_id = str(server_id)
 
     overview_message = await get_live_message_object(server_id, "overview")
@@ -1006,17 +1006,17 @@ async def update_overview(server_id, page_index: int = None):
         return
 
     overview_embeds = generate_overview_embeds(server_id)
-    if page_index is None:
+    if page_number is None:
         current_page = get_current_page_from_message_embed_title(overview_message)
-        page_index = min(current_page, len(overview_embeds)) - 1
-    updated_overview_embed = overview_embeds[page_index]
+        page_number = min(current_page, len(overview_embeds))
+    updated_overview_embed = overview_embeds[page_number - 1]
 
     page_buttons_view = PageButtonsView(overview_message, update_overview, server_id)
     if updated_overview_embed is not None:
         await overview_message.edit(embed=updated_overview_embed, view=page_buttons_view)
 
 
-async def update_list(server_id, page_index: int = None):
+async def update_list(server_id, page_number: int = None):
     server_id = str(server_id)
 
     list_message = await get_live_message_object(server_id, "list")
@@ -1024,10 +1024,10 @@ async def update_list(server_id, page_index: int = None):
         return
 
     list_embeds = (await generate_list_embeds(server_id))
-    if page_index is None:
+    if page_number is None:
         current_page = get_current_page_from_message_embed_title(list_message)
-        page_index = min(current_page, len(list_embeds)) - 1
-    updated_list_embed = list_embeds[page_index]
+        page_number = min(current_page, len(list_embeds))
+    updated_list_embed = list_embeds[page_number - 1]
 
     page_buttons_view = PageButtonsView(list_message, update_list, server_id)
     if updated_list_embed is not None:
