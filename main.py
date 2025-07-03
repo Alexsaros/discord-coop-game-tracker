@@ -1405,8 +1405,6 @@ async def on_connect():
     # Load scheduled jobs that were saved during earlier runs
     load_scheduler_jobs()
 
-    await load_views()
-
     codenames.load_games(bot)
 
     log("Finished on_connect()")
@@ -1415,6 +1413,9 @@ async def on_connect():
 @bot.event
 async def on_ready():
     log(f"{bot.user} has connected to Discord!")
+
+    # Make buttons functional
+    await load_views()
 
     # Checks Steam and displays the updated prices
     await update_dataset_steam_prices()
