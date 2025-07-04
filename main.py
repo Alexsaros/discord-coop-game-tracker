@@ -1759,8 +1759,11 @@ async def overview(ctx):
     page_buttons_view = PageButtonsView(overview_embed.title, message.id, update_overview, server_id)
     await message.edit(embed=overview_embed, view=page_buttons_view)
 
-    dataset = read_dataset()
+    # Remove the buttons from the old overview message
+    old_message = await get_live_message_object(server_id, "overview")
+    await old_message.edit(embed=overview_embed, view=None)
 
+    dataset = read_dataset()
     # Store the new message ID
     dataset[server_id]["overview_message_id"] = message.id
     dataset[server_id]["overview_channel_id"] = ctx.channel.id
@@ -1782,6 +1785,10 @@ async def list_games(ctx):
     message = await ctx.send(embed=list_embed)
     page_buttons_view = PageButtonsView(list_embed.title, message.id, update_list, server_id)
     await message.edit(embed=list_embed, view=page_buttons_view)
+
+    # Remove the buttons from the old list message
+    old_message = await get_live_message_object(server_id, "list")
+    await old_message.edit(embed=list_embed, view=None)
 
     dataset = read_dataset()
     # Store the new message ID
