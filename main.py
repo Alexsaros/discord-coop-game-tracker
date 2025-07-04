@@ -2216,8 +2216,12 @@ def get_users_voice_channel(username, server_id):
     return user.voice.channel
 
 
-async def play_audio(voice_channel, audio_path):
-    voice_client = await voice_channel.connect()
+async def play_audio(voice_channel: discord.VoiceChannel, audio_path):
+    try:
+        voice_client = await voice_channel.connect()
+    except Exception as e:
+        await send_error_message(f"Error: failed to connect to voice channel. {e}")
+        return
 
     try:
         # Wait a little to give the "joined channel" sound effect time to go away before we start playing sound
