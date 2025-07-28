@@ -6,6 +6,7 @@ import asyncio
 import json
 import time
 import requests
+import re
 import datetime
 import subprocess
 import flask
@@ -2501,6 +2502,48 @@ async def choose(ctx, *options):
     selected_option = random.choice(options)
     options_string = ", ".join(options)
     message_text = f"Possible options: {options_string}.\nChosen: **{selected_option}**."
+    message = await ctx.send(message_text)
+    await ctx.message.delete()
+
+
+@bot.command(name="roll", help="Performs the given dice rolls and shows the result. Example: !roll 2d8+3.")
+async def roll_dice(ctx, expression):
+    log(f"{ctx.author}: {ctx.message.content}")
+
+    if not re.fullmatch(r"[\d+\-*/().d\s]+", expression):
+        raise InvalidArgumentException(f"The entered dice rolls contains invalid characters.")
+
+    # Ensure Discord doesn't try to parse the asterisks
+    expression = expression.replace("*", "\\*")
+
+    display_text = expression
+    eval_expression = expression
+    display_offset = 0
+    eval_offset = 0
+
+    for match in re.finditer(r"(\d+)d(\d+)", expression):
+        amount, sides = map(int, match.groups())
+        rolls = [random.randint(1, sides) for _ in range(amount)]
+
+        rolls_text = "+".join(str(roll) for roll in rolls)
+        rolls_text = f"`{rolls_text}`"  # Make results of individual dice rolls monospace
+
+        start, end = match.start(), match.end()
+        # Replace the dice roll with the results of the dice roll
+        display_text = display_text[:start + display_offset] + rolls_text + display_text[end + display_offset:]
+        # Keep track of how much the display string shifted in length compared to the original string
+        display_offset += len(rolls_text) - (end - start)
+
+        eval_string = str(sum(rolls))
+        # Do the same for the eval string
+        eval_expression = eval_expression[:start + eval_offset] + eval_string + eval_expression[end + eval_offset:]
+        eval_offset += len(eval_string) - (end - start)
+
+    # Remove backslashes and compute the result
+    eval_expression = eval_expression.replace("\\", "")
+    result = eval(eval_expression)
+
+    message_text = f"{ctx.author.name} rolls: {expression}.\nResult: {display_text} = **{result}**.\n## **{result}**"
     message = await ctx.send(message_text)
     await ctx.message.delete()
 
