@@ -57,6 +57,7 @@ AFFINITY_EMBED_COLOR = discord.Color.purple()
 TAROT_EMBED_COLOR = discord.Color.gold()
 HOROSCOPE_EMBED_COLOR = discord.Color.magenta()
 LIST_PLAY_WITHOUT_EMBED_COLOR = discord.Color.red()
+LIST_OWNED_GAMES_EMBED_COLOR = discord.Color.orange()
 
 EMOJIS = {
     "owned": ":video_game:",
@@ -1847,6 +1848,7 @@ async def play_without(ctx, username):
 
     guild = get_discord_guild_object(server_id)
     if guild is None:
+        log(f"Could not get guild for server ID {server_id}.")
         return None
 
     games_list = []
@@ -1881,6 +1883,65 @@ async def play_without(ctx, username):
         title=title_text,
         description=games_list_text,
         color=LIST_PLAY_WITHOUT_EMBED_COLOR
+    )
+    embeds = paginate_embed_description(list_embed)
+    list_embed = embeds[0]
+
+    await ctx.send(embed=list_embed)
+    await ctx.message.delete()
+
+
+@bot.command(name="owned_games", help="Displays a list of games that everyone has marked as owned. Example: !owned_games.")
+async def display_owned_games(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = str(ctx.guild.id)
+
+    dataset = read_dataset()
+    # Try to narrow down the dataset to this server
+    if server_id not in dataset:
+        log(f"Could not find server {server_id} in the dataset.")
+        return None
+
+    server_dataset = dataset[server_id]
+
+    member_count = server_dataset["member_count"]
+    game_dataset = server_dataset.get("games", {})
+    owned_games = []
+
+    for game_data_dict in game_dataset.values():
+        game_data = GameData(json_data=game_data_dict)
+
+        owned_count = sum(1 for owned in game_data.owned.values() if owned is True)
+
+        if owned_count >= member_count:
+            owned_games.append(game_data)
+
+    guild = get_discord_guild_object(server_id)
+    if guild is None:
+        log(f"Could not get guild for server ID {server_id}.")
+        return None
+
+    games_list = []
+    for game_data in owned_games:
+        game_text = f"{game_data.id} -"
+        if game_data.steam_id != 0:
+            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
+            game_text += f" [{game_data.name}]({game_link})"
+        else:
+            game_text += " " + game_data.name
+        price_text = generate_price_text(game_data)
+        if price_text:
+            game_text += " " + generate_price_text(game_data)
+
+        games_list.append(game_text)
+
+    title_text = f"Games owned by everyone"
+    games_list_text = "\n".join(games_list)
+
+    list_embed = discord.Embed(
+        title=title_text,
+        description=games_list_text,
+        color=LIST_OWNED_GAMES_EMBED_COLOR
     )
     embeds = paginate_embed_description(list_embed)
     list_embed = embeds[0]
