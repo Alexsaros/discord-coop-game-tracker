@@ -1391,9 +1391,11 @@ async def load_views():
     dataset = read_dataset()
     for server_id in dataset.keys():
         overview_message = await get_live_message_object(server_id, "overview")
-        bot.add_view(PageButtonsView(overview_message.embeds[0].title, overview_message.id, update_overview, server_id))
+        if overview_message is not None:
+            bot.add_view(PageButtonsView(overview_message.embeds[0].title, overview_message.id, update_overview, server_id))
         list_message = await get_live_message_object(server_id, "list")
-        bot.add_view(PageButtonsView(list_message.embeds[0].title, list_message.id, update_list, server_id))
+        if list_message is not None:
+            bot.add_view(PageButtonsView(list_message.embeds[0].title, list_message.id, update_list, server_id))
 
 
 @bot.event
@@ -1763,7 +1765,8 @@ async def overview(ctx):
 
     # Remove the buttons from the old overview message
     old_message = await get_live_message_object(server_id, "overview")
-    await old_message.edit(embed=overview_embed, view=None)
+    if old_message is not None:
+        await old_message.edit(embed=overview_embed, view=None)
 
     dataset = read_dataset()
     # Store the new message ID
@@ -1790,7 +1793,8 @@ async def list_games(ctx):
 
     # Remove the buttons from the old list message
     old_message = await get_live_message_object(server_id, "list")
-    await old_message.edit(embed=list_embed, view=None)
+    if old_message is not None:
+        await old_message.edit(embed=list_embed, view=None)
 
     dataset = read_dataset()
     # Store the new message ID
