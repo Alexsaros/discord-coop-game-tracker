@@ -14,7 +14,7 @@ import shutil
 from io import BytesIO
 from discord.ext import commands
 from discord.ext.commands import CommandInvokeError
-from discord.ui import View, Button
+from discord.ui import View, Button, Select
 from dotenv import load_dotenv
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -628,7 +628,7 @@ def get_users_aliases_string(server_dataset, users_list):
     return users_text
 
 
-def generate_price_text(game_data):
+def generate_price_text(game_data: GameData):
     price_text = ""
     if game_data.price_original == -2:
         price_text = "coming soon"
@@ -652,7 +652,7 @@ def generate_price_text(game_data):
     return price_text
 
 
-def get_game_embed_field(game_data, server_dataset):
+def get_game_embed_field(game_data: GameData, server_dataset):
     """
     Gets the details of the given game from the dataset to be displayed in an embed field.
     Returns a dictionary with keys "name", "value", and "inline", as expected by Discord's embed field.
@@ -1011,8 +1011,11 @@ async def update_overview(server_id, page_number: int = None):
     updated_overview_embed = overview_embeds[page_number - 1]
 
     page_buttons_view = PageButtonsView(updated_overview_embed.title, overview_message.id, update_overview, server_id)
-    if updated_overview_embed is not None:
-        await overview_message.edit(embed=updated_overview_embed, view=page_buttons_view)
+    try:
+        if updated_overview_embed is not None:
+            await overview_message.edit(embed=updated_overview_embed, view=page_buttons_view)
+    except Exception as e:
+        await send_error_message(e)
 
 
 async def update_list(server_id, page_number: int = None):
@@ -1029,8 +1032,11 @@ async def update_list(server_id, page_number: int = None):
     updated_list_embed = list_embeds[page_number - 1]
 
     page_buttons_view = PageButtonsView(updated_list_embed.title, list_message.id, update_list, server_id)
-    if updated_list_embed is not None:
-        await list_message.edit(embed=updated_list_embed, view=page_buttons_view)
+    try:
+        if updated_list_embed is not None:
+            await list_message.edit(embed=updated_list_embed, view=page_buttons_view)
+    except Exception as e:
+        await send_error_message(e)
 
 
 async def update_hall_of_game(server_id):
@@ -1041,14 +1047,18 @@ async def update_hall_of_game(server_id):
         return
 
     updated_hog_embed = generate_hog_embed(server_id)
-    if updated_hog_embed is not None:
-        await hog_message.edit(embed=updated_hog_embed)
+    try:
+        if updated_hog_embed is not None:
+            await hog_message.edit(embed=updated_hog_embed)
+    except Exception as e:
+        await send_error_message(e)
 
 
-async def update_live_messages(server_id):
+async def update_live_messages(server_id, skip_hog=False):
     await update_overview(server_id)
     await update_list(server_id)
-    await update_hall_of_game(server_id)
+    if not skip_hog:
+        await update_hall_of_game(server_id)
 
 
 async def update_all_overviews():
@@ -1472,94 +1482,6 @@ async def on_reaction_add(reaction, user):
             save_dataset(dataset)
         return
 
-    if len(message.embeds) == 0:
-        return
-    # Assume the message only has 1 embed, as multiple aren't possible
-    embed = message.embeds[0]
-    # Use the embed color to identify the embed's function
-    if embed.color == EDIT_GAME_EMBED_COLOR:
-        # Split the title into (game_id, game_name)
-        if " - " not in embed.title:
-            await send_error_message(f"Error: incorrect game embed title format: \"{embed.title}\".")
-            return
-        game_id, game_name = embed.title.split(" - ", 1)
-
-        # Get the game's data
-        dataset = read_dataset()
-        server_dataset = dataset[server_id]
-        try:
-            game_data = filter_game_dataset(dataset, server_id, game_name)
-        except CouldNotFindGameException as e:
-            log(e)
-            return
-
-        # Try to perform an action based on the added reaction
-        try:
-            score_emojis = {
-                "1️⃣": 1,
-                "2️⃣": 2,
-                "3️⃣": 3,
-                "4️⃣": 4,
-                "5️⃣": 5,
-                "6️⃣": 6,
-                "7️⃣": 7,
-                "8️⃣": 8,
-                "9️⃣": 9,
-                "🔟": 10,
-            }
-            if reaction.emoji in score_emojis:
-                score = score_emojis[reaction.emoji]
-                game_data.votes[str(user)] = score
-                return
-
-            owned_emojis = {
-                "🎮": True,
-                "💸": False,
-            }
-            if reaction.emoji in owned_emojis:
-                is_owned = owned_emojis[reaction.emoji]
-                game_data.owned[str(user)] = is_owned
-                return
-
-            player_count_emojis = {
-                "🧍": 1,
-                "🧑‍🤝‍🧑": 2,
-                "👨‍👧‍👦": 3,
-                "👨‍👨‍👧‍👦": 4,
-            }
-            if reaction.emoji in player_count_emojis:
-                player_count = player_count_emojis[reaction.emoji]
-                game_data.player_count = player_count
-                return
-
-            if reaction.emoji == "📡":
-                game_data.local = True
-                return
-
-            played_before_emojis = {
-                "🧠": True,
-                "🆕": False,
-            }
-            if reaction.emoji in played_before_emojis:
-                played_before = played_before_emojis[reaction.emoji]
-                game_data.played_before[str(user)] = played_before
-                return
-
-        finally:
-            # Save the edited game info
-            dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-            save_dataset(dataset)
-
-            # Get the updated game info and display it in the embed
-            embed_field_info = get_game_embed_field(game_data, server_dataset)
-            title = embed_field_info["name"]
-            embed_field_info["name"] = ""
-            game_embed = discord.Embed(title=title, color=EDIT_GAME_EMBED_COLOR)
-            game_embed.add_field(**embed_field_info)
-
-            await message.edit(embed=game_embed)
-            await update_live_messages(server_id)
-
 
 @bot.command(name="update_prices", help="Retrieves the latest prices from Steam. Example: !update_prices.")
 async def update_prices(ctx):
@@ -1959,24 +1881,135 @@ async def edit(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = str(ctx.guild.id)
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
-
-    server_dataset = dataset[server_id]
-
-    # Get info on the game and display it in an embed
-    embed_field_info = get_game_embed_field(game_data, server_dataset)
-    title = embed_field_info["name"]
-    embed_field_info["name"] = ""
-    game_embed = discord.Embed(title=title, color=EDIT_GAME_EMBED_COLOR)
-    game_embed.add_field(**embed_field_info)
+    edit_game = EditGame(game_name, server_id, ctx.channel.id)
+    await edit_game.send_message()
 
     await ctx.message.delete()
 
-    message = await ctx.send(embed=game_embed)
-    emoji_reactions = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟", "🎮", "💸", "🧍", "🧑‍🤝‍🧑", "👨‍👧‍👦", "👨‍👨‍👧‍👦", "📡", "🧠", "🆕", "❌"]
-    for reaction in emoji_reactions:
-        await message.add_reaction(reaction)
+
+class EditGame:
+
+    def __init__(self, game_name, server_id, channel_id):
+        self.game_name = game_name
+        self.server_id = server_id
+        self.channel_id = channel_id
+        self.message_object = None
+
+    async def send_message(self):
+        channel_object = bot.get_channel(self.channel_id)
+
+        game_embed = self.get_embed()
+        game_view = self.EditGameView(self)
+        self.message_object = await channel_object.send(embed=game_embed, view=game_view)    # type: discord.Message
+
+    async def update_message(self):
+        game_embed = self.get_embed()
+        game_view = self.EditGameView(self)
+        await self.message_object.edit(embed=game_embed, view=game_view)    # type: discord.Message
+
+        await update_live_messages(self.server_id, skip_hog=True)
+
+    def get_game_data(self) -> GameData:
+        dataset = read_dataset()
+        return filter_game_dataset(dataset, self.server_id, self.game_name)
+
+    async def save_game_data(self, game_data: GameData):
+        dataset = read_dataset()
+        # Save the edited game info
+        dataset[self.server_id]["games"][str(game_data.id)] = game_data.to_json()
+        save_dataset(dataset)
+
+        await self.update_message()
+
+    def get_embed(self):
+        game_data = self.get_game_data()
+        dataset = read_dataset()
+        server_dataset = dataset[self.server_id]
+
+        # Get info on the game and display it in an embed
+        embed_field_info = get_game_embed_field(game_data, server_dataset)
+        title = embed_field_info["name"]
+        embed_field_info["name"] = ""
+        game_embed = discord.Embed(title=title, color=EDIT_GAME_EMBED_COLOR)
+        game_embed.add_field(**embed_field_info)
+        return game_embed
+
+    async def delete_message(self):
+        await self.message_object.delete()
+
+    class EditGameView(View):
+
+        def __init__(self, edit_game_object):
+            super().__init__(timeout=None)
+            self.edit_game_object = edit_game_object    # type: EditGame
+
+            self.add_item(self.edit_game_object.VoteMenu(self.edit_game_object))
+            self.add_item(Button(style=discord.ButtonStyle.blurple, label="Toggle owned", custom_id="owned"))
+            self.add_item(Button(style=discord.ButtonStyle.blurple, label="Toggle played before", custom_id="played_before"))
+            self.add_item(Button(style=discord.ButtonStyle.grey, label="Toggle single copy required", custom_id="local"))
+            self.add_item(self.edit_game_object.PlayersMenu(self.edit_game_object))
+            self.add_item(Button(style=discord.ButtonStyle.red, label="Close", custom_id="close"))
+
+        async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            try:
+                await interaction.response.defer()
+
+                button_id = interaction.data.get("custom_id")
+                game_data = self.edit_game_object.get_game_data()
+                username = interaction.user.name
+
+                if button_id == "owned":
+                    owned = game_data.owned.get(username, True)
+                    game_data.owned[username] = not owned
+                elif button_id == "played_before":
+                    played_before = game_data.played_before.get(username, True)
+                    game_data.played_before[username] = not played_before
+                elif button_id == "local":
+                    game_data.local = not game_data.local
+                elif button_id == "close":
+                    await self.edit_game_object.delete_message()
+                    return True
+                else:
+                    return True
+
+                await self.edit_game_object.save_game_data(game_data)
+            except Exception as e:
+                await send_error_message(e)
+
+            return True
+
+    class VoteMenu(Select):
+        def __init__(self, edit_game_object):
+            self.edit_game_object = edit_game_object    # type: EditGame
+            # The options range from 10 to 0
+            options = [discord.SelectOption(label=str(i), value=str(i)) for i in range(10, -1, -1)]
+            super().__init__(placeholder="Vote", options=options)
+
+        async def callback(self, interaction: discord.Interaction):
+            try:
+                vote = int(self.values[0])
+                username = interaction.user.name
+                game_data = self.edit_game_object.get_game_data()
+                game_data.votes[username] = vote
+                await self.edit_game_object.save_game_data(game_data)
+            except Exception as e:
+                await send_error_message(e)
+
+    class PlayersMenu(Select):
+        def __init__(self, edit_game_object):
+            self.edit_game_object = edit_game_object    # type: EditGame
+            # The options range from 1 to 4
+            options = [discord.SelectOption(label=str(i), value=str(i)) for i in range(1, 5)]
+            super().__init__(placeholder="Player count", options=options)
+
+        async def callback(self, interaction: discord.Interaction):
+            try:
+                player_count = int(self.values[0])
+                game_data = self.edit_game_object.get_game_data()
+                game_data.player_count = player_count
+                await self.edit_game_object.save_game_data(game_data)
+            except Exception as e:
+                await send_error_message(e)
 
 
 @bot.command(name="tag", help="Adds an informative tag to a game. Example: !tag \"game name\" \"PvP only\".")
