@@ -558,7 +558,7 @@ def filter_game_dataset(dataset: dict, server_id, game_name, finished=False):
 
     except ValueError:
         for game_data_dict in game_dataset.values():
-            if game_data_dict["name"] == game_name:
+            if game_data_dict["name"].lower() == game_name.lower():
                 if finished:
                     return FinishedGameData(json_data=game_data_dict)
                 else:
