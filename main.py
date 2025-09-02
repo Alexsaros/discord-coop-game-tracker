@@ -230,8 +230,9 @@ def update_bot():
     data = flask.request.json
     if data and data.get("ref") == "refs/heads/main":
         os.chdir("/home/alexsaro/discord-coop-game-tracker")
-        subprocess.run(["git", "pull"])
+        output = subprocess.run(["git", "pull"], capture_output=True, text=True)
 
+        log(output)
         log("Pulled new git commits. Shutting down the bot so it can restart...")
         threading.Thread(target=shutdown).start()
     return "", 200
