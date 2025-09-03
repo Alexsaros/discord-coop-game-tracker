@@ -1293,7 +1293,11 @@ async def notify_users_free_to_keep_game(free_game: FreeGameDeal):
     for user_id in users_to_notify.keys():
         user = await get_discord_user(int(user_id))
         formatted_message = free_game.to_message_text()
-        await user.send(formatted_message)
+        try:
+            await user.send(formatted_message)
+        except discord.Forbidden:
+            # User has disabled DMs from the bot
+            pass
 
 
 async def check_itad_for_free_to_keep_games():
