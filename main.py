@@ -808,10 +808,8 @@ async def generate_list_embeds(server_id):
         # Get everyone who hasn't voted yet
         non_voters = [member.name for member in guild.members if not member.bot]
         for name in game_data.votes.keys():
-            try:
+            if name in non_voters:
                 non_voters.remove(name)
-            except ValueError as e:
-                await send_error_message(f"Error: failed to remove {name} from the members list: {e}")
         non_voters_text = get_users_aliases_string(server_dataset, non_voters)
 
         game_text = f"{game_data.id} -"
@@ -1293,7 +1291,7 @@ async def notify_users_free_to_keep_game(free_game: FreeGameDeal):
     users_to_notify = read_file_safe(USERS_NOTIFY_FREE_GAMES_FILE)  # type: dict[str, str]
 
     for user_id in users_to_notify.keys():
-        user = bot.get_user(int(user_id))
+        user = await get_discord_user(int(user_id))
         formatted_message = free_game.to_message_text()
         await user.send(formatted_message)
 
@@ -1783,10 +1781,8 @@ async def play_without(ctx, username):
         # Get everyone who hasn't voted yet
         non_voters = [member.name for member in guild.members if not member.bot]
         for name in game_data.votes.keys():
-            try:
+            if name in non_voters:
                 non_voters.remove(name)
-            except ValueError as e:
-                await send_error_message(f"Error: failed to remove {name} from the members list: {e}")
         non_voters_text = get_users_aliases_string(server_dataset, non_voters)
 
         game_text = f"{game_data.id} -"
@@ -2280,7 +2276,7 @@ async def send_me_free_games(ctx, notify_on_free_game="yes"):
         users_to_notify[user_id] = ""   # Just save an empty string as the value for now. Maybe we'll have a use for the value in the future
 
         # Notify the interested user about all of the currently active deals
-        user = bot.get_user(int(user_id))
+        user = await get_discord_user(int(user_id))
         await user.send("From now on, I will send you a message whenever a game becomes free to keep.")
         active_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)  # type: dict[str, int, dict]
         for deal in active_deals.values():
