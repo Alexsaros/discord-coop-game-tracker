@@ -295,7 +295,11 @@ class CustomHelpCommand(commands.DefaultHelpCommand):
 
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=CustomHelpCommand())
 
-scheduler = AsyncIOScheduler()
+scheduler = AsyncIOScheduler(
+    job_defaults={
+        'misfire_grace_time': 3600,     # 1 hour
+    }
+)
 
 
 async def get_discord_user(user_id) -> discord.User:
@@ -1438,7 +1442,7 @@ async def on_ready():
 
     # Create a job to update the prices every 6 hours
     scheduler.add_job(update_dataset_steam_prices, CronTrigger(hour="0,6,12,18"))
-    # Create a job to check for new free-to-keep every 6 hours
+    # Create a job to check for new free-to-keep games every 6 hours
     scheduler.add_job(check_free_to_keep_games, CronTrigger(hour="7,19"))
     # Create a job that makes a backup of the dataset every 12 hours
     scheduler.add_job(create_backup, CronTrigger(hour="2,14"))
