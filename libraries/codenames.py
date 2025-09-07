@@ -108,16 +108,22 @@ async def clean_up_old_games(bot: Bot):
             if game.last_interaction_timestamp < two_weeks_ago:
                 game.remove_from_file()
                 for discord_message in game.discord_messages:
-                    message = await discord_message.get_message()
-                    # Remove any buttons
-                    await message.edit(view=None)
-                    await message.reply("This game has now been deleted due to inactivity.")
+                    try:
+                        message = await discord_message.get_message()
+                        # Remove any buttons
+                        await message.edit(view=None)
+                        await message.reply("This game has now been deleted due to inactivity.")
+                    except discord.Forbidden:
+                        pass
 
             # If there is between 1-2 days left, send a notification that the game will be deleted in 2 days
             elif 0 < (twelve_days_ago - game.last_interaction_timestamp) < (24 * 60 * 60):
                 for discord_message in game.discord_messages:
-                    message = await discord_message.get_message()
-                    await message.reply("This game will be deleted if it is not continued within 2 days.")
+                    try:
+                        message = await discord_message.get_message()
+                        await message.reply("This game will be deleted if it is not continued within 2 days.")
+                    except discord.Forbidden:
+                        pass
     except Exception as e:
         await send_error_message(bot, e)
 
