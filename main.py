@@ -24,7 +24,9 @@ import random
 import hmac
 import hashlib
 from playwright.async_api import async_playwright
-
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from libraries import codenames
 
 load_dotenv()
@@ -38,6 +40,10 @@ DEVELOPER_USER_ID = os.getenv("DEVELOPER_USER_ID")
 ITAD_CLIENT_ID = os.getenv("ITAD_CLIENT_ID")
 ITAD_CLIENT_SECRET = os.getenv("ITAD_CLIENT_SECRET")
 ITAD_API_KEY = os.getenv("ITAD_API_KEY")
+
+BOT_EMAIL = os.getenv("BOT_EMAIL")
+BOT_PASSWORD = os.getenv("BOT_PASSWORD")
+DEV_EMAIL = os.getenv("DEV_EMAIL")
 
 DATASET_FILE = "dataset.json"
 FREE_TO_KEEP_GAMES_FILE = "free_to_keep_games.json"
@@ -1290,7 +1296,31 @@ async def get_free_to_keep_games() -> dict[str, dict[str, str]]:
     return free_games
 
 
+async def send_email(free_game):
+    message = MIMEMultipart()
+    message["From"] = BOT_EMAIL
+    message["To"] = DEV_EMAIL
+    message["Subject"] = "Free game"
+    body = free_game.to_message_text()
+    message.attach(MIMEText(body, "plain"))
+
+    server = None
+    try:
+        # Connect to Gmail SMTP
+        server = smtplib.SMTP("smtp.gmail.com", 587)
+        server.starttls()  # Secure the connection
+        server.login(BOT_EMAIL, BOT_PASSWORD)
+        server.sendmail(BOT_EMAIL, DEV_EMAIL, message.as_string())
+    except Exception as e:
+        await send_error_message(e)
+    finally:
+        if server:
+            server.quit()
+
+
 async def notify_users_free_to_keep_game(free_game: FreeGameDeal):
+    await send_email(free_game)
+
     # Get the users that want to be notified of free games
     users_to_notify = read_file_safe(USERS_NOTIFY_FREE_GAMES_FILE)  # type: dict[str, str]
 
