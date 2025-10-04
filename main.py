@@ -1242,7 +1242,7 @@ def search_steam_for_game(game_name):
 
 async def get_free_to_keep_games() -> dict[str, dict[str, str]]:
     # URL for free deals on GG.deals
-    url = "https://gg.deals/deals/pc/?minDiscount=100&minRating=0"
+    url = "https://gg.deals/deals/pc/?minDiscount=100"
     free_games = {}
 
     async with async_playwright() as p:
