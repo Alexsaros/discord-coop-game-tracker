@@ -1,9 +1,11 @@
 import os
 import threading
 import traceback
+from collections import defaultdict
+from typing import Optional
+
 import discord
 import asyncio
-import json
 import time
 import requests
 import re
@@ -24,10 +26,21 @@ import random
 import hmac
 import hashlib
 from playwright.async_api import async_playwright
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+
+from sqlalchemy.orm import joinedload, Session
+
 from libraries import codenames
+from storage import db
+from storage.bedtime import Bedtime
+from storage.db import SessionMaker, BaseModel
+from storage.free_game_subscriber import FreeGameSubscriber
+from storage.free_game import FreeGame
+from storage.game import Game, ReleaseState
+from storage.live_message import LiveMessageType, LiveMessage
+from storage.server import Server
+from storage.server_member import ServerMember
+from storage.user import User
+from storage.vote import Vote
 
 load_dotenv()
 APP_ID = os.getenv("APP_ID")
@@ -41,13 +54,7 @@ ITAD_CLIENT_ID = os.getenv("ITAD_CLIENT_ID")
 ITAD_CLIENT_SECRET = os.getenv("ITAD_CLIENT_SECRET")
 ITAD_API_KEY = os.getenv("ITAD_API_KEY")
 
-BOT_EMAIL = os.getenv("BOT_EMAIL")
-BOT_PASSWORD = os.getenv("BOT_PASSWORD")
-DEV_EMAIL = os.getenv("DEV_EMAIL")
-
-DATASET_FILE = "dataset.json"
-FREE_TO_KEEP_GAMES_FILE = "free_to_keep_games.json"
-USERS_NOTIFY_FREE_GAMES_FILE = "users_notify_free_games.json"
+DATABASE_FILE = "bot_data.db"
 BEDTIME_MP3 = "bedtime.mp3"
 BACKUP_DIRECTORY = "backups"
 MAX_BACKUPS = 20
@@ -57,7 +64,6 @@ EMBED_MAX_FIELDS = 25
 EMBED_MAX_CHARACTERS = 6000
 EMBED_DESCRIPTION_MAX_CHARACTERS = 4096
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
-OVERVIEW_EMBED_COLOR = discord.Color.blue()
 LIST_EMBED_COLOR = discord.Color.blurple()
 AFFINITY_EMBED_COLOR = discord.Color.purple()
 TAROT_EMBED_COLOR = discord.Color.gold()
@@ -250,11 +256,6 @@ def shutdown():
     os._exit(0)
 
 
-if __name__ == "__main__":
-    # Start a thread that will restart this script whenever a Git commit has been pushed to the repo
-    updater_thread = threading.Thread(target=bot_updater.run, kwargs={"host": "127.0.0.1", "port": 5500})
-    updater_thread.start()
-
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
@@ -269,7 +270,7 @@ class BotException(Exception):
         self.message = message
 
 
-class CouldNotFindGameException(BotException):
+class GameNotFoundException(BotException):
     pass
 
 
@@ -308,10 +309,10 @@ scheduler = AsyncIOScheduler(
 )
 
 
-async def get_discord_user(user_id) -> discord.User:
-    user = bot.get_user(int(user_id))
+async def get_discord_user(user_id: int) -> discord.User:
+    user = bot.get_user(user_id)
     if user is None:
-        user = await bot.fetch_user(int(user_id))
+        user = await bot.fetch_user(user_id)
     return user
 
 
@@ -328,175 +329,48 @@ async def send_error_message(exception):
         log(message)
     else:
         message = str(exception)
-    developer = await get_discord_user(DEVELOPER_USER_ID)
+    developer = await get_discord_user(int(DEVELOPER_USER_ID))
     await developer.send(f"```{message}```")
 
 
-class GameData:
+def free_game_to_message_text(free_game: FreeGame):
+    """
+    Formats the free game into a message announcing it, including a hyperlink.
 
-    id = -1
-    name = ""
-    submitter = ""
-    votes = None
-    tags = None
-    player_count = 0
-    steam_id = 0
-    price_current = -1
-    price_original = -1     # -2 means it is not yet released
-    local = False
-    played_before = None
-
-    def __init__(self, json_data=None):
-        self.votes = {}
-        self.tags = []
-        self.owned = {}
-        self.played_before = {}
-        if json_data:
-            self.load_json(json_data)
-
-    def load_json(self, json_data):
-        self.id = json_data["id"]
-        self.name = json_data["name"]
-        self.submitter = json_data["submitter"]
-        self.votes = json_data.get("votes", {})
-        self.tags = json_data.get("tags", [])
-        self.owned = json_data.get("owned", {})
-        self.player_count = json_data.get("player_count", 0)
-        self.steam_id = json_data.get("steam_id", 0)
-        self.price_current = json_data.get("price_current", -1)
-        self.price_original = json_data.get("price_original", -1)
-        self.local = json_data.get("local", False)
-        self.played_before = json_data.get("played_before", {})
-
-    def to_json(self):
-        return {
-            "id": self.id,
-            "name": self.name,
-            "submitter": self.submitter,
-            "votes": self.votes,
-            "tags": self.tags,
-            "owned": self.owned,
-            "player_count": self.player_count,
-            "steam_id": self.steam_id,
-            "price_current": self.price_current,
-            "price_original": self.price_original,
-            "local": self.local,
-            "played_before": self.played_before,
-        }
-
-    def __str__(self):
-        return str(self.to_json())
-
-
-class FinishedGameData(GameData):
-
-    finished_timestamp = 0
-    enjoyment_scores = None
-
-    def __init__(self, json_data=None):
-        self.enjoyment_scores = {}
-        super().__init__(json_data=json_data)
-
-    def load_json(self, json_data):
-        super().load_json(json_data)
-        self.finished_timestamp = json_data.get("finished_timestamp", 0)
-        self.enjoyment_scores = json_data.get("enjoyment_scores", {})
-
-    def to_json(self):
-        json_data = super().to_json()
-        json_data["finished_timestamp"] = self.finished_timestamp
-        json_data["enjoyment_scores"] = self.enjoyment_scores
-        return json_data
-
-
-class FreeGameDeal:
-
-    deal_id = ""
-    game_name = ""
-    shop_name = ""
-    expiry_datetime = ""
-    url = ""
-    type = ""   # Can be "game", "dlc", or "package"
-
-    def __init__(self, json_data=None):
-        if json_data:
-            self.load_json(json_data)
-
-    def load_json(self, json_data):
-        self.deal_id = json_data.get("deal_id", "")
-        self.game_name = json_data.get("game_name", "")
-        self.shop_name = json_data.get("shop_name", "")
-        self.expiry_datetime = json_data.get("expiry_datetime", "")
-        self.url = json_data.get("url", "")
-        self.type = json_data.get("type", "")
-
-    def to_json(self) -> dict[str, str]:
-        return {
-            "deal_id": self.deal_id,
-            "game_name": self.game_name,
-            "shop_name": self.shop_name,
-            "expiry_datetime": self.expiry_datetime,
-            "url": self.url,
-            "type": self.type,
-        }
-
-    def to_message_text(self):
-        """
-        Formats this free game deal into a message announcing it, including a hyperlink.
-
-        :return: a string describing that this game is free, for how long, and where to get it.
-        """
-        # Calculate how much time is left for this deal and add it to a presentable string
-        expiry_string = ""
-        if self.expiry_datetime:
-            expiry_datetime_object = parser.isoparse(self.expiry_datetime)
-            formatted_time = expiry_datetime_object.strftime("%Y-%m-%d %H:%M")
-            expiry_string += formatted_time
-            time_until_expiry = expiry_datetime_object - datetime.datetime.now(expiry_datetime_object.tzinfo)
-            days_until_expiry = time_until_expiry.days
-            expiry_string += " ("
-            if days_until_expiry > 0:
-                expiry_string += f"{days_until_expiry} day"
-                if days_until_expiry != 1:
-                    expiry_string += "s"
-                expiry_string += " and "
-            hours_until_expiry = int(time_until_expiry.seconds / 3600)
-            expiry_string += f"{hours_until_expiry} hour"
-            if hours_until_expiry != 1:
+    :return: a string describing that this game is free, for how long, and where to get it.
+    """
+    # Calculate how much time is left for this deal and add it to a presentable string
+    expiry_string = ""
+    if free_game.expiry_datetime:
+        expiry_datetime_object = parser.isoparse(free_game.expiry_datetime)
+        formatted_time = expiry_datetime_object.strftime("%Y-%m-%d %H:%M")
+        expiry_string += formatted_time
+        time_until_expiry = expiry_datetime_object - datetime.datetime.now(expiry_datetime_object.tzinfo)
+        days_until_expiry = time_until_expiry.days
+        expiry_string += " ("
+        if days_until_expiry > 0:
+            expiry_string += f"{days_until_expiry} day"
+            if days_until_expiry != 1:
                 expiry_string += "s"
-            expiry_string += " left)"
+            expiry_string += " and "
+        hours_until_expiry = int(time_until_expiry.seconds / 3600)
+        expiry_string += f"{hours_until_expiry} hour"
+        if hours_until_expiry != 1:
+            expiry_string += "s"
+        expiry_string += " left)"
 
-        # Set up the the message
-        message_text = f"**{self.game_name}**"
-        if self.type and self.type != "game":
-            message_text += f" (*{self.type.upper()}*)"
-        message_text += f" is free to keep on [{self.shop_name}](<{self.url}>)"
-        if expiry_string:
-            message_text += f" until {expiry_string}"
-        message_text += "."
-        return message_text
-
-    def __str__(self):
-        return str(self.to_json())
-
-
-def read_file_safe(filename):
-    if not os.path.exists(filename):
-        log(f"{filename} does not exist. Creating it...")
-        file_data = {}
-    else:
-        with open(filename, "r") as file:
-            file_data = json.load(file)
-
-    return file_data
+    # Set up the the message
+    message_text = f"**{free_game.game_name}**"
+    if free_game.type and free_game.type != "game":
+        message_text += f" (*{free_game.type.upper()}*)"
+    message_text += f" is free to keep on [{free_game.shop_name}](<{free_game.url}>)"
+    if expiry_string:
+        message_text += f" until {expiry_string}"
+    message_text += "."
+    return message_text
 
 
-def read_dataset():
-    dataset = read_file_safe(DATASET_FILE)  # type: dict[str, int, dict]
-    return dataset
-
-
-def create_backup(file_to_backup=DATASET_FILE):
+def create_backup(file_to_backup=DATABASE_FILE):
     # Ensure the backup directory exists
     os.makedirs(BACKUP_DIRECTORY, exist_ok=True)
 
@@ -505,7 +379,7 @@ def create_backup(file_to_backup=DATASET_FILE):
     filename = os.path.basename(file_to_backup)
     backup_filepath = os.path.join(BACKUP_DIRECTORY, f"{filename}_{timestamp}.bak")
     shutil.copy2(file_to_backup, backup_filepath)
-    print(f"Created backup: {backup_filepath}")
+    log(f"Created backup: {backup_filepath}")
 
     # Get all the backups for the requested file, and sort them from old to new
     relevant_backups = [os.path.join(BACKUP_DIRECTORY, f) for f in os.listdir(BACKUP_DIRECTORY) if f.startswith(filename) and f.endswith(".bak")]
@@ -515,137 +389,124 @@ def create_backup(file_to_backup=DATASET_FILE):
     while len(backups) > MAX_BACKUPS:
         oldest_backup = backups.pop(0)
         os.remove(oldest_backup)
-        print(f"Deleted old backup: {oldest_backup}")
+        log(f"Deleted old backup: {oldest_backup}")
 
 
-def save_dataset(dataset: dict):
-    with open(DATASET_FILE, "w") as file:
-        json.dump(dataset, file, indent=4)
-
-
-def create_new_server_entry():
-    return {
-        "game_count": 0,
-        "member_count": 1,
-        "games": {},
-        "overview_message_id": 0,
-        "overview_channel_id": 0,
-        "list_message_id": 0,
-        "list_channel_id": 0,
-        "hall_of_game_message_id": 0,
-        "hall_of_game_channel_id": 0,
-        "aliases": {},
-        "finished_games": {},
-        "bedtimes": {},
-    }
-
-
-def filter_game_dataset(dataset: dict, server_id, game_name, finished=False):
+def get_game(db_session: Session, server_id: int, game_name: str, finished=False) -> Game:
     """
-    Checks if the given dataset contains the given game, and returns the game's data as a GameData object.
-    Raises a CouldNotFindGameException if the game was not found.
+    Returns the game's data from the database as a Game object.
+    Raises a GameNotFoundException if the game was not found.
     """
-    # Narrow down the dataset to a specific server
-    server_id = str(server_id)
-    if server_id not in dataset:
-        dataset[server_id] = create_new_server_entry()
-    if finished:
-        game_dataset = dataset[server_id]["finished_games"]
-        exception_template = "Could not find finished game with ***. Use: !finish \"game name\", to mark a game as finished."
-    else:
-        game_dataset = dataset[server_id]["games"]
-        exception_template = "Could not find game with ***. Use: !add \"game name\", to add a new game."
-
     try:
         # Check if the game was passed as ID
         game_id = str(int(game_name))
-        if game_id in game_dataset:
-            game_data_dict = game_dataset[game_id]
+        game = (
+            db_session.query(Game)
+                .filter(Game.server_id == server_id)
+                .filter(Game.id == game_id)
+                .filter(Game.finished.is_(finished))
+                .first()
+        )   # type: Game
+
+        if game is None:
+            # TODO find an easier way to handle these exception messages
             if finished:
-                return FinishedGameData(json_data=game_data_dict)
+                raise GameNotFoundException(f"Could not find finished game with ID \"{game_id}\". Use: !finish \"game name\", to mark a game as finished.")
             else:
-                return GameData(json_data=game_data_dict)
-        raise CouldNotFindGameException(exception_template.replace("***", f"ID \"{game_id}\""))
+                raise GameNotFoundException(f"Could not find game with ID \"{game_id}\". Use: !add \"game name\", to add a new game.")
+
+        return game
 
     except ValueError:
-        for game_data_dict in game_dataset.values():
-            if game_data_dict["name"].lower() == game_name.lower():
-                if finished:
-                    return FinishedGameData(json_data=game_data_dict)
-                else:
-                    return GameData(json_data=game_data_dict)
-        raise CouldNotFindGameException(exception_template.replace("***", f"name \"{game_name}\""))
+        # A name was given to find the game
+        game = (
+            db_session.query(Game)
+                .filter(Game.server_id == server_id)
+                .filter(Game.name.ilike(game_name))
+                .filter(Game.finished.is_(finished))
+                .first()
+        )   # type: Game
+
+        if game is None:
+            if finished:
+                raise GameNotFoundException(f"Could not find finished game with name \"{game_name}\". Use: !finish \"game name\", to mark a game as finished.")
+            else:
+                raise GameNotFoundException(f"Could not find game with name \"{game_name}\". Use: !add \"game name\", to add a new game.")
+
+        return game
 
 
-def add_game_to_dataset(dataset: dict, server_id, game_data: GameData, set_game_id=True):
-    server_id = str(server_id)
-    if server_id not in dataset:
-        dataset[server_id] = create_new_server_entry()
-
-    if set_game_id:
-        game_data.id = dataset[server_id]["game_count"] + 1
-    # Update the game count
-    dataset[server_id]["game_count"] += 1
-
-    dataset[server_id]["games"][game_data.id] = game_data.to_json()
-    return dataset
-
-
-def sort_games_by_score(server_dataset, finished_games=False):
-    member_count = server_dataset["member_count"]
-    if finished_games:
-        game_dataset = server_dataset.get("finished_games", {})
-    else:
-        game_dataset = server_dataset.get("games", {})
+def sort_games_by_score(games: list[Game], member_count: int) -> list[tuple[Game, int]]:
     game_scores = []
 
-    for game_data_dict in game_dataset.values():
-        if finished_games:
-            game_data = FinishedGameData(json_data=game_data_dict)
-        else:
-            game_data = GameData(json_data=game_data_dict)
-
+    for game in games:
         # Count the score for this game
         total_score = 0
-        if finished_games:
-            votes = game_data.enjoyment_scores
+        if not game.finished:
+            db_session = SessionMaker()
+            try:
+                votes = (
+                    db_session.query(Vote)
+                        .filter(Vote.server_id == game.server_id)
+                        .filter(Vote.game_id == game.id)
+                        .all()
+                )
+                votes = {vote.user_id: vote.score for vote in votes}
+            finally:
+                db_session.close()
         else:
-            votes = game_data.votes
-        for voter, score in votes.items():
+            votes = game.enjoyment_scores
+
+        for _, score in votes.items():
             total_score += score
         # Use a score of 5 for the non-voters
         non_voters = member_count - len(votes)
         total_score += non_voters * 5
 
-        game_scores.append((game_data, total_score))
+        game_scores.append((game, total_score))
 
     return sorted(game_scores, key=lambda x: x[1], reverse=True)
 
 
-def get_users_aliases_string(server_dataset, users_list):
-    # Get each user's alias, falling back to their name if not set
-    users_text = ""
-    aliases = server_dataset.get("aliases", {})
-    user_names = []
-    user_aliases = []
-    for user in users_list:
-        user_alias = aliases.get(user)
-        if user_alias is not None:
-            user_aliases.append(user_alias)
-        else:
-            user_names.append(user)
-    users_text += " ".join(user_aliases)
-    users_text += ", ".join(user_names)
-    return users_text
+def get_users_aliases_string(server_id: int, user_ids: list[int]) -> str:
+    db_session = SessionMaker()
+
+    try:
+        # Get each user's alias, falling back to their global name if not set
+        users_text = ""
+        members = (
+            db_session.query(ServerMember)
+                .options(joinedload(ServerMember.user))     # Also preemptively retrieve User data
+                .filter(ServerMember.server_id == server_id)
+                .filter(ServerMember.user_id.in_(user_ids))
+                .all()
+        )   # type: list[ServerMember]
+
+        user_names = []
+        user_aliases = []
+        for member in members:
+            if member.alias is not None:
+                user_aliases.append(member.alias)
+            else:
+                user_names.append(member.user.global_name)
+
+        users_text += " ".join(user_aliases)
+        users_text += ", ".join(user_names)
+        return users_text
+
+    finally:
+        db_session.close()
 
 
-def generate_price_text(game_data: GameData):
+def generate_price_text(game: Game) -> str:
     price_text = ""
-    if game_data.price_original == -2:
+    if game is None:
+        return price_text
+    if game.release_state != ReleaseState.RELEASED:
         price_text = "coming soon"
-    elif game_data.price_original >= 0:
-        price_original = game_data.price_original
-        price_current = game_data.price_current
+    elif game.price_original >= 0:
+        price_original = game.price_original
+        price_current = game.price_current
 
         if price_original == 0:
             price_text = EMOJIS["free"]
@@ -663,61 +524,74 @@ def generate_price_text(game_data: GameData):
     return price_text
 
 
-def get_game_embed_field(game_data: GameData, server_dataset):
+def get_game_embed_field(game: Game):
     """
     Gets the details of the given game from the dataset to be displayed in an embed field.
     Returns a dictionary with keys "name", "value", and "inline", as expected by Discord's embed field.
     """
     description = ""
 
-    price_text = generate_price_text(game_data)
+    price_text = generate_price_text(game)
     if price_text != "":
         # If we have the Steam game ID, add a hyperlink on the game's price
-        if game_data.steam_id:
-            link = f"https://store.steampowered.com/app/{game_data.steam_id}"
+        if game.steam_id:
+            link = f"https://store.steampowered.com/app/{game.steam_id}"
             price_text = f"[{price_text}]({link})"
 
         description += f"\n> Price: {price_text}"
 
-    if game_data.votes:
-        description += "\n> Voted: "
-        voters = game_data.votes.keys()
-        voters_text = get_users_aliases_string(server_dataset, voters)
-        description += voters_text
+    db_session = SessionMaker()
 
-    if game_data.player_count > 0:
-        player_count_text = EMOJIS[f"{game_data.player_count}players"]
+    try:
+        votes = (
+            db_session.query(Vote)
+                .filter(Vote.server_id == game.server_id)
+                .filter(Vote.game_id == game.id)
+                .all()
+        )   # type: list[Vote]
+
+        if votes:
+            user_ids = [vote.user_id for vote in votes]
+            description += "\n> Voted: "
+            voters_text = get_users_aliases_string(game.server_id, user_ids)
+            description += voters_text
+
+    finally:
+        db_session.close()
+
+    if game.player_count is not None:
+        player_count_text = EMOJIS[f"{game.player_count}players"]
         description += f"\n> Players: {player_count_text}"
 
     # Do not display who owns a game if the game is free, as you can't buy a free game
-    people_bought_game = (game_data.owned and game_data.price_original != 0)
-    if people_bought_game or game_data.local:
+    people_bought_game = (game.owned and game.price_original is not None)
+    if people_bought_game or game.local:
         description += "\n> Owned: "
 
         if people_bought_game:
             # Sums the True/False values, with them corresponding to 1/0
-            owned_count = sum(owned for owned in game_data.owned.values())
+            owned_count = sum(owned for owned in game.owned.values())
             description += EMOJIS["owned"] * owned_count
-            description += EMOJIS["not_owned"] * (len(game_data.owned) - owned_count)
+            description += EMOJIS["not_owned"] * (len(game.owned) - owned_count)
 
-        if game_data.local:
+        if game.local:
             description += "(" + EMOJIS["local"] + ")"
 
-    if game_data.played_before:
+    if game.played_before:
         description += "\n> Experience: "
         # Sums the True/False values, with them corresponding to 1/0
-        played_before_count = sum(played for played in game_data.played_before.values())
+        played_before_count = sum(played for played in game.played_before.values())
         description += EMOJIS["experienced"] * played_before_count
-        description += EMOJIS["new"] * (len(game_data.played_before) - played_before_count)
+        description += EMOJIS["new"] * (len(game.played_before) - played_before_count)
 
-    tags = game_data.tags
+    tags = game.tags
     if len(tags) > 0:
         description += "\n> " + "\n> ".join(tags)
 
     description = description.strip()
 
     embed_field_info = {
-        "name": f"{game_data.id} - {game_data.name}",
+        "name": f"{game.id} - {game.name}",
         "value": description,
         "inline": False,
     }
@@ -752,7 +626,7 @@ def paginate_embed_fields(embed: discord.Embed):
     return embeds
 
 
-def paginate_embed_description(embed: discord.Embed):
+def paginate_embed_description(embed: discord.Embed) -> list[discord.Embed]:
     embeds = []
     current_embed_description = ""
 
@@ -774,185 +648,178 @@ def paginate_embed_description(embed: discord.Embed):
     return embeds
 
 
-def generate_overview_embeds(server_id):
-    server_id = str(server_id)
-
-    dataset = read_dataset()
-    # Try to narrow down the dataset to a specific server
-    if server_id not in dataset:
-        log(f"Could not find server {server_id} in the dataset.")
-        return None
-    server_dataset = dataset[server_id]
-
-    sorted_games = sort_games_by_score(server_dataset)
-    total_game_count = len(sorted_games)
-
-    title_text = f"Games overview ({total_game_count} total)"
-    embed = discord.Embed(title=title_text, color=OVERVIEW_EMBED_COLOR)
-    for game_data, score in sorted_games:
-        embed_field_info = get_game_embed_field(game_data, server_dataset)
-        embed.add_field(**embed_field_info)
-
-    embeds = paginate_embed_fields(embed)
-    return embeds
-
-
-async def generate_list_embeds(server_id):
-    server_id = str(server_id)
-
-    dataset = read_dataset()
-    # Try to narrow down the dataset to this server
-    if server_id not in dataset:
-        log(f"Could not find server {server_id} in the dataset.")
-        return None
-
-    server_dataset = dataset[server_id]
-    sorted_games = sort_games_by_score(server_dataset)
-
+async def generate_list_embeds(server_id: int) -> Optional[list[discord.Embed]]:
     guild = get_discord_guild_object(server_id)
     if guild is None:
         return None
 
-    games_list = []
-    for game_data, score in sorted_games:
-        # Get everyone who hasn't voted yet
-        non_voters = [member.name for member in guild.members if not member.bot]
-        for name in game_data.votes.keys():
-            if name in non_voters:
-                non_voters.remove(name)
-        non_voters_text = get_users_aliases_string(server_dataset, non_voters)
+    db_session = SessionMaker()
 
-        game_text = f"{game_data.id} -"
-        if game_data.steam_id != 0:
-            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
-            game_text += f" [{game_data.name}]({game_link})"
-        else:
-            game_text += " " + game_data.name
-        price_text = generate_price_text(game_data)
-        if price_text:
-            game_text += " " + generate_price_text(game_data)
-        if non_voters_text:
-            game_text += " " + non_voters_text
+    try:
+        games = (
+            db_session.query(Game)
+                .filter(Game.server_id == server_id)
+                .filter(Game.finished.is_(False))
+                .all()
+        )   # type: list[Game]
 
-        games_list.append(game_text)
+        # TODO get member count from database
+        members = [member for member in guild.members if not member.bot]
+        sorted_games = sort_games_by_score(games, len(members))
 
-    title_text = "Games list (shows non-voters)"
-    games_list_text = "\n".join(games_list)
+        games_list = []     # type: list[str]
+        for game, score in sorted_games:
+            # Get everyone who hasn't voted yet
+            non_voters_ids = [member.id for member in members]
 
-    list_embed = discord.Embed(
-        title=title_text,
-        description=games_list_text,
-        color=LIST_EMBED_COLOR
-    )
-    embeds = paginate_embed_description(list_embed)
-    return embeds
+            voters_ids = (
+                db_session.query(Vote.user_id)
+                    .filter(Vote.server_id == server_id)
+                    .filter(Vote.game_id == game.id)
+                    .all()
+            )  # type: list[tuple[int]]
+            voters_ids = [voter_id[0] for voter_id in voters_ids]   # type: list[int]
+
+            for voter_id in voters_ids:
+                if voter_id in non_voters_ids:
+                    non_voters_ids.remove(voter_id)
+            non_voters_text = get_users_aliases_string(server_id, non_voters_ids)
+
+            game_text = f"{game.id} -"
+            if game.steam_id is not None:
+                game_link = "https://store.steampowered.com/app/" + str(game.steam_id)
+                game_text += f" [{game.name}]({game_link})"
+            else:
+                game_text += " " + game.name
+            price_text = generate_price_text(game)
+            if price_text:
+                game_text += " " + price_text
+            if non_voters_text:
+                game_text += " " + non_voters_text
+
+            games_list.append(game_text)
+
+        title_text = "Games list (shows non-voters)"
+        games_list_text = "\n".join(games_list)
+
+        list_embed = discord.Embed(
+            title=title_text,
+            description=games_list_text,
+            color=LIST_EMBED_COLOR
+        )
+        embeds = paginate_embed_description(list_embed)
+        return embeds
+
+    finally:
+        db_session.close()
 
 
-def generate_hog_embed(server_id):
-    server_id = str(server_id)
-
-    dataset = read_dataset()
-    # Try to narrow down the dataset to this server
-    if server_id not in dataset:
-        log(f"Could not find server {server_id} in the dataset.")
-        return None
-
-    server_dataset = dataset[server_id]
-    sorted_games = sort_games_by_score(server_dataset, finished_games=True)
-    if len(sorted_games) == 0:
-        log("No completed games found.")
-        return None
-
+def generate_hog_embed(server_id: int):
     guild = get_discord_guild_object(server_id)
     if guild is None:
         return None
 
-    games_list = []
-    for game_data, score in sorted_games:
-        if game_data.steam_id == 0:
-            game_text = f"{game_data.id} - {game_data.name}"
-        else:
-            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
-            game_text = f"{game_data.id} - [{game_data.name}]({game_link})"
-        games_list.append(game_text)
+    db_session = SessionMaker()
 
-    title_text = "Hall of Game"
-    games_list_text = "\n".join(games_list)
-    # Determine if we can show all games in the embed
-    chars_over_limit = len(title_text) + len(games_list_text) - EMBED_MAX_CHARACTERS
-    if chars_over_limit > 0:
-        games_list_text = games_list_text[:-chars_over_limit - 3] + "..."
+    try:
+        # Get all finished games
+        games = (
+            db_session.query(Game)
+                .filter(Game.server_id == server_id)
+                .filter(Game.finished.is_(True))
+                .all()
+        )   # type: list[Game]
 
-    list_embed = discord.Embed(
-        title=title_text,
-        description=games_list_text,
-        color=LIST_EMBED_COLOR
-    )
-    return list_embed
+        if len(games) == 0:
+            log("No finished games found.")
+            return None
+
+        # TODO get member count from database
+        members = [member for member in guild.members if not member.bot]
+        sorted_games = sort_games_by_score(games, len(members))
+
+        games_list = []
+        for game, score in sorted_games:
+            if game.steam_id is None:
+                game_text = f"{game.id} - {game.name}"
+            else:
+                game_link = "https://store.steampowered.com/app/" + str(game.steam_id)
+                game_text = f"{game.id} - [{game.name}]({game_link})"
+            games_list.append(game_text)
+
+        title_text = "Hall of Game"
+        games_list_text = "\n".join(games_list)
+        # Determine if we can show all games in the embed
+        chars_over_limit = len(title_text) + len(games_list_text) - EMBED_MAX_CHARACTERS
+        if chars_over_limit > 0:
+            games_list_text = games_list_text[:-chars_over_limit - 3] + "..."
+
+        list_embed = discord.Embed(
+            title=title_text,
+            description=games_list_text,
+            color=LIST_EMBED_COLOR
+        )
+        return list_embed
+
+    finally:
+        db_session.close()
 
 
-def get_discord_guild_object(server_id):
+def get_discord_guild_object(server_id: int) -> Optional[discord.Guild]:
     """
     Gets Discord's guild object for the given server ID.
     Returns None if not found.
     """
-    server_id = str(server_id)
-
     # Get the Discord server object
-    guild_object = bot.get_guild(int(server_id))
+    guild_object = bot.get_guild(server_id)
     if guild_object is None:
         log(f"Discord could not find guild with ID {server_id}.")
         return None
     return guild_object
 
 
-async def get_live_message_object(server_id, message_type: str):
+async def get_live_message_object(server_id: int, message_type: LiveMessageType) -> Optional[discord.Message]:
     """
     Gets the message object for one of the live updating messages.
-    Currently supports "overview", "list", and "hall_of_game" as message types.
     Returns None if not found.
     """
-    server_id = str(server_id)
-
-    # Get the server dataset
-    dataset = read_dataset()
-    server_dataset = dataset.get(server_id)
-    if server_dataset is None:
-        log(f"Could not find server with ID {server_id} in dataset.")
-        return None
-
     # Get the Discord guild object
     guild_object = get_discord_guild_object(server_id)
     if guild_object is None:
         return None
 
-    # Get the channel ID in which the message was sent
-    channel_id = server_dataset.get(f"{message_type}_channel_id")
-    if channel_id in (None, 0):
-        # This server does not have the specified message
-        return None
-
-    # Get the Discord channel object
-    channel_object = guild_object.get_channel(channel_id)
-    if channel_object is None:
-        log(f"Discord could not find channel with ID {channel_id}.")
-        return None
-
-    # Get the Discord message object
-    message_id = server_dataset.get(f"{message_type}_message_id")
-    if message_id in (None, 0):
-        await send_error_message(f"Error: {message_type}_message_id not found, but {message_type}_channel_id is present for server {server_id}.")
-        return None
+    db_session = SessionMaker()
 
     try:
-        message = await channel_object.fetch_message(message_id)
-        return message
-    except discord.errors.NotFound:
-        log(f"Could not find {message_type} with ID {message_id}. It has likely been deleted. Removing it from the dataset...")
-        dataset[server_id][f"{message_type}_channel_id"] = 0
-        dataset[server_id][f"{message_type}_message_id"] = 0
-        save_dataset(dataset)
-        return None
+        live_message = (
+            db_session.query(LiveMessage)
+                .filter(LiveMessage.server_id == server_id)
+                .filter(LiveMessage.message_type == message_type)
+                .first()
+        )   # type: LiveMessage
+        if live_message is None:
+            # This server does not have the specified message
+            return None
+
+        # Get the Discord channel object
+        channel_object = await guild_object.fetch_channel(live_message.channel_id)
+        if channel_object is None:
+            log(f"Discord could not find channel with ID {live_message.channel_id}. It has likely been deleted. Removing child message from the dataset...")
+            db_session.delete(live_message)
+            db_session.commit()
+            return None
+
+        # Get the Discord message object
+        try:
+            return await channel_object.fetch_message(live_message.message_id)
+        except discord.errors.NotFound:
+            log(f"Could not find {message_type} with ID {live_message.message_id}. It has likely been deleted. Removing it from the dataset...")
+            db_session.delete(live_message)
+            db_session.commit()
+            return None
+
+    finally:
+        db_session.close()
 
 
 class PageButtonsView(View):
@@ -1006,31 +873,8 @@ def get_total_pages_from_message_title(embed_title: str) -> int:
     return total_pages
 
 
-async def update_overview(server_id, page_number: int = None):
-    server_id = str(server_id)
-
-    overview_message = await get_live_message_object(server_id, "overview")
-    if overview_message is None:
-        return
-
-    overview_embeds = generate_overview_embeds(server_id)
-    if page_number is None:
-        current_page = get_current_page_from_message_title(overview_message.embeds[0].title)
-        page_number = min(current_page, len(overview_embeds))
-    updated_overview_embed = overview_embeds[page_number - 1]
-
-    page_buttons_view = PageButtonsView(updated_overview_embed.title, overview_message.id, update_overview, server_id)
-    try:
-        if updated_overview_embed is not None:
-            await overview_message.edit(embed=updated_overview_embed, view=page_buttons_view)
-    except Exception as e:
-        await send_error_message(e)
-
-
-async def update_list(server_id, page_number: int = None):
-    server_id = str(server_id)
-
-    list_message = await get_live_message_object(server_id, "list")
+async def update_list(server_id: int, page_number: int = None) -> None:
+    list_message = await get_live_message_object(server_id, LiveMessageType.LIST)
     if list_message is None:
         return
 
@@ -1048,10 +892,8 @@ async def update_list(server_id, page_number: int = None):
         await send_error_message(e)
 
 
-async def update_hall_of_game(server_id):
-    server_id = str(server_id)
-
-    hog_message = await get_live_message_object(server_id, "hall_of_game")
+async def update_hall_of_game(server_id: int) -> None:
+    hog_message = await get_live_message_object(server_id, LiveMessageType.HALL_OF_GAME)
     if hog_message is None:
         return
 
@@ -1063,28 +905,28 @@ async def update_hall_of_game(server_id):
         await send_error_message(e)
 
 
-async def update_live_messages(server_id, skip_hog=False):
-    await update_overview(server_id)
+async def update_live_messages(server_id: int, skip_hog=False) -> None:
     await update_list(server_id)
     if not skip_hog:
         await update_hall_of_game(server_id)
 
 
-async def update_all_overviews():
-    dataset = read_dataset()
-    for server_id in dataset:
-        await update_overview(server_id)
+async def update_all_lists() -> None:
+    db_session = SessionMaker()
+
+    try:
+        servers = db_session.query(Server).all()    # type: list[Server]
+
+        for server in servers:
+            await update_list(server.id)
+
+    finally:
+        db_session.close()
 
 
-async def update_all_lists():
-    dataset = read_dataset()
-    for server_id in dataset:
-        await update_list(server_id)
-
-
-def get_steam_game_data(steam_game_id):
+def get_steam_game_data(steam_game_id: int):
     # Check if an actual Steam game ID was given
-    if steam_game_id == 0:
+    if steam_game_id is None:
         return None
     steam_game_id = str(steam_game_id)
 
@@ -1112,7 +954,7 @@ def get_steam_game_data(steam_game_id):
     return steam_game_data
 
 
-async def get_game_price(steam_game_id):
+async def get_game_price(steam_game_id: int):
     """
     Uses the Steam API to search for info on the given Steam game ID.
     Returns a dictionary containing the "id", "price_current" and "price_original" keys.
@@ -1183,21 +1025,23 @@ def get_steam_game_banner(steam_game_id):
     return discord.File(image_bytes, f"{game_name} banner.jpg")
 
 
-async def update_dataset_steam_prices():
-    dataset = read_dataset()
-    for server_dataset in dataset.values():
-        game_dataset = server_dataset.get("games", {})
-        for game_dict in game_dataset.values():
-            steam_id = game_dict.get("steam_id", 0)
-            steam_game_info = await get_game_price(steam_id)
+async def update_database_steam_prices():
+    db_session = SessionMaker()
+
+    try:
+        games = db_session.query(Game).all()    # type: list[Game]
+        for game in games:
+            steam_game_info = await get_game_price(game.steam_id)
             if steam_game_info is not None:
-                game_dict["price_current"] = steam_game_info["price_current"]
-                game_dict["price_original"] = steam_game_info["price_original"]
+                game.price_current = steam_game_info["price_current"]
+                game.price_original = steam_game_info["price_original"]
 
-    save_dataset(dataset)
-    log("Retrieved Steam prices")
+        db_session.commit()
+        log("Retrieved Steam prices")
 
-    await update_all_overviews()
+    finally:
+        db_session.close()
+
     await update_all_lists()
 
 
@@ -1240,7 +1084,7 @@ def search_steam_for_game(game_name):
     return game_match
 
 
-async def get_free_to_keep_games() -> dict[str, dict[str, str]]:
+async def get_free_to_keep_games() -> list[FreeGame]:
     # URL for free deals on GG.deals
     url = "https://gg.deals/deals/pc/?minDiscount=100"
     free_games = {}
@@ -1258,126 +1102,73 @@ async def get_free_to_keep_games() -> dict[str, dict[str, str]]:
         await page.goto(url, timeout=30_000)
         await page.wait_for_selector("div.game-item-v2", timeout=30_000)
 
-        game_elements = await page.query_selector_all("div.game-item-v2")
-        for g in game_elements:
-            title_el = await g.query_selector("a.game-info-title")
-            if not title_el:
-                continue
-            game_name = (await title_el.inner_text()).strip()
+        db_session = SessionMaker()
 
-            shop_name = await g.get_attribute("data-shop-name") or ""
+        try:
+            # Empty the free games table
+            db_session.query(FreeGame).delete()
 
-            time_el = await g.query_selector("time.timesince")
-            deal_end_time = await time_el.get_attribute("datetime") if time_el else ""
+            game_elements = await page.query_selector_all("div.game-item-v2")
+            for g in game_elements:
+                title_el = await g.query_selector("a.game-info-title")
+                if not title_el:
+                    continue
+                game_name = (await title_el.inner_text()).strip()
 
-            shop_link_el = await g.query_selector("a.shop-link")
-            if shop_link_el:
-                relative = await shop_link_el.get_attribute("href") or ""
-                shop_link = "https://gg.deals" + relative
-            else:
-                shop_link = ""
+                shop_name = await g.get_attribute("data-shop-name") or ""
 
-            deal_path = await title_el.get_attribute("href") or ""
-            parts = [seg for seg in deal_path.split("/") if seg]
-            deal_type = parts[0] if parts else ""
+                time_el = await g.query_selector("time.timesince")
+                deal_end_time = await time_el.get_attribute("datetime") if time_el else ""
 
-            fg = FreeGameDeal()
-            fg.deal_id = deal_path
-            fg.game_name = game_name
-            fg.shop_name = shop_name
-            fg.expiry_datetime = deal_end_time
-            fg.url = shop_link
-            fg.type = deal_type
+                shop_link_el = await g.query_selector("a.shop-link")
+                if shop_link_el:
+                    relative = await shop_link_el.get_attribute("href") or ""
+                    shop_link = "https://gg.deals" + relative
+                else:
+                    shop_link = ""
 
-            free_games[fg.deal_id] = fg.to_json()
+                deal_path = await title_el.get_attribute("href") or ""
+                parts = [seg for seg in deal_path.split("/") if seg]
+                deal_type = parts[0] if parts else ""
+
+                free_game = FreeGame(
+                    deal_id=deal_path,
+                    game_name=game_name,
+                    shop_name=shop_name,
+                    expiry_datetime=deal_end_time,
+                    url=shop_link,
+                    type=deal_type,
+                )
+
+                free_games.append(free_game)
+                db_session.add(free_game)
+
+            db_session.commit()
+
+        finally:
+            db_session.close()
 
         await browser.close()
 
     return free_games
 
 
-async def send_email(free_game):
-    message = MIMEMultipart()
-    message["From"] = BOT_EMAIL
-    message["To"] = DEV_EMAIL
-    message["Subject"] = "Free game"
-    body = free_game.to_message_text()
-    message.attach(MIMEText(body, "plain"))
-
-    server = None
+async def notify_users_free_to_keep_game(free_game: FreeGame):
+    db_session = SessionMaker()
     try:
-        # Connect to Gmail SMTP
-        server = smtplib.SMTP("smtp.gmail.com", 587)
-        server.starttls()  # Secure the connection
-        server.login(BOT_EMAIL, BOT_PASSWORD)
-        server.sendmail(BOT_EMAIL, DEV_EMAIL, message.as_string())
-    except Exception as e:
-        await send_error_message(e)
+        # Get the users that want to be notified of free games
+        subscribed_users = db_session.query(FreeGameSubscriber).all()  # type: list[FreeGameSubscriber]
     finally:
-        if server:
-            server.quit()
+        db_session.close()
 
-
-async def notify_users_free_to_keep_game(free_game: FreeGameDeal):
-    await send_email(free_game)
-
-    # Get the users that want to be notified of free games
-    users_to_notify = read_file_safe(USERS_NOTIFY_FREE_GAMES_FILE)  # type: dict[str, str]
-
-    for user_id in users_to_notify.keys():
-        user = await get_discord_user(int(user_id))
+    for subscriber in subscribed_users:
+        user = await get_discord_user(subscriber.user_id)
         formatted_message = free_game.to_message_text()
         try:
             await user.send(formatted_message)
         except discord.Forbidden:
             # User has disabled DMs from the bot
             pass
-
-
-async def check_itad_for_free_to_keep_games():
-    itad_deals_endpoint = "https://api.isthereanydeal.com/deals/v2"
-    params = {
-        "key": ITAD_API_KEY,
-        "filter": "N4IgDgTglgxgpiAXKAtlAdk9BXANrgGhBQEMAPJABgF9qg",     # Only free games (up to 0 euro)
-    }
-
-    response = requests.get(itad_deals_endpoint, params=params)
-    try:
-        response.raise_for_status()
-    except Exception as e:
-        log(f"Failed to get free-to-keep games. {e}")
-        return None
-
-    payload = response.json()
-    if payload["nextOffset"] >= 20:
-        log("Warning: not all free-to-keep games fit in the response.")
-
-    # Get the deals that we've already gotten earlier
-    old_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)     # type: dict[str, int, dict]
-
-    game_deals_list = payload["list"]
-    new_deals = {}
-    for game_deal in game_deals_list:
-        # Save info on this deal in a new FreeGameData object
-        free_game = FreeGameDeal()
-        free_game.deal_id = game_deal["id"]
-        free_game.game_name = game_deal["title"]
-        free_game.type = game_deal["type"]
-        deal_info = game_deal["deal"]
-        free_game.shop_name = deal_info["shop"]["name"]
-        free_game.expiry_datetime = deal_info["expiry"]
-        free_game.url = deal_info["url"]
-
-        # Keep track of this deal by adding it to the new_deals dictionary
-        new_deals[free_game.deal_id] = free_game.to_json()
-
-        # If this deal is new, send a message to users who want to be notified
-        if free_game.deal_id not in old_deals.keys():
-            await notify_users_free_to_keep_game(free_game)
-
-    # Save the deals we just retrieved
-    with open(FREE_TO_KEEP_GAMES_FILE, "w") as file:
-        json.dump(new_deals, file, indent=4)
 
 
 async def check_free_to_keep_games(wait=True):
@@ -1387,18 +1178,20 @@ async def check_free_to_keep_games(wait=True):
         await asyncio.sleep(wait_time)
 
     try:
-        # Get the deals that we've already gotten earlier
-        old_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)     # type: dict[str, int, dict]
+        db_session = SessionMaker()
+        try:
+            # Get the deals that we've already gotten earlier
+            free_games_old = db_session.query(FreeGame).all()   # type: list[FreeGame]
+            free_games_old_ids = [free_game.deal_id for free_game in free_games_old]
+        finally:
+            db_session.close()
 
-        new_deals = await get_free_to_keep_games()
-        for new_deal in new_deals.keys():
+        free_games = await get_free_to_keep_games()
+        for free_game in free_games:
             # If this deal is new, send a message to users who want to be notified
-            if new_deal not in old_deals.keys():
-                await notify_users_free_to_keep_game(FreeGameDeal(json_data=new_deals[new_deal]))
+            if free_game.deal_id not in free_games_old_ids:
+                await notify_users_free_to_keep_game(free_game)
 
-        # Save the deals we just retrieved
-        with open(FREE_TO_KEEP_GAMES_FILE, "w") as file:
-            json.dump(new_deals, file, indent=4)
     except Exception as e:
         await send_error_message(e)
 
@@ -1413,36 +1206,44 @@ def parse_boolean(boolean_string):
         raise InvalidArgumentException(f"Received invalid argument ({boolean_string}). Must be either \"yes\" or \"no\".")
 
 
-def load_scheduler_jobs():
-    dataset = read_dataset()
-    for server_id, server_dataset in dataset.items():
-        # Re-schedule each bedtime job
-        bedtimes = server_dataset.get("bedtimes", {})
-        for username, bedtime_data in bedtimes.items():
-            bedtime_job_id = bedtime_data["job_id"]
-            bedtime_split = bedtime_data["time"].split(":")
-            hour = int(bedtime_split[0])
-            minute = int(bedtime_split[1])
-            scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=bedtime_job_id)
+def load_bedtime_scheduler_jobs():
+    db_session = SessionMaker()
+    try:
+        bedtimes = db_session.query(Bedtime).all()  # type: list[Bedtime]
+    finally:
+        db_session.close()
 
-            # Re-schedule the late bedtime reminder as well
-            bedtime_late_job_id = bedtime_data["job_late_id"]
-            bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
-            bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
-            hour_late = bedtime_late.hour
-            minute_late = bedtime_late.minute
-            scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[username, server_id, True], id=bedtime_late_job_id)
+    for bedtime in bedtimes:
+        # Re-schedule each bedtime job
+        hour = bedtime.bedtime_time.hour
+        minute = bedtime.bedtime_time.minute
+        scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[bedtime.user_id, bedtime.server_id], id=bedtime.scheduler_job_id)
+
+        # Re-schedule the late bedtime reminder as well
+        bedtime_late_job_id = bedtime.scheduler_job_late_id
+        bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+        bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
+        hour_late = bedtime_late.hour
+        minute_late = bedtime_late.minute
+        scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[bedtime.user_id, bedtime.server_id, True], id=bedtime_late_job_id)
 
 
 async def load_views():
-    dataset = read_dataset()
-    for server_id in dataset.keys():
-        overview_message = await get_live_message_object(server_id, "overview")
-        if overview_message is not None:
-            bot.add_view(PageButtonsView(overview_message.embeds[0].title, overview_message.id, update_overview, server_id))
-        list_message = await get_live_message_object(server_id, "list")
-        if list_message is not None:
-            bot.add_view(PageButtonsView(list_message.embeds[0].title, list_message.id, update_list, server_id))
+    db_session = SessionMaker()
+    try:
+        list_messages = (
+            db_session.query(LiveMessage)
+                .filter(LiveMessage.message_type == LiveMessageType.LIST)
+                .all()
+        )   # type: list[LiveMessage]
+
+    finally:
+        db_session.close()
+
+    for list_message in list_messages:
+        list_message_obj = await get_live_message_object(list_message.server_id, LiveMessageType.LIST)
+        if list_message_obj is not None:
+            bot.add_view(PageButtonsView(list_message_obj.embeds[0].title, list_message_obj.id, update_list, list_message.server_id))
 
 
 @bot.event
@@ -1451,7 +1252,7 @@ async def on_connect():
     scheduler.start()
 
     # Load scheduled jobs that were saved during earlier runs
-    load_scheduler_jobs()
+    load_bedtime_scheduler_jobs()
 
     codenames.load_games(bot)
 
@@ -1466,12 +1267,12 @@ async def on_ready():
     await load_views()
 
     # Checks Steam and displays the updated prices
-    await update_dataset_steam_prices()
+    await update_database_steam_prices()
     # Check any free-to-keep games
     await check_free_to_keep_games(wait=False)
 
     # Create a job to update the prices every 6 hours
-    scheduler.add_job(update_dataset_steam_prices, CronTrigger(hour="0,6,12,18"))
+    scheduler.add_job(update_database_steam_prices, CronTrigger(hour="0,6,12,18"))
     # Create a job to check for new free-to-keep games every 6 hours
     scheduler.add_job(check_free_to_keep_games, CronTrigger(hour="7,19"))
     # Create a job that makes a backup of the dataset every 12 hours
@@ -1501,31 +1302,17 @@ async def on_reaction_add(reaction, user):
         return
     log(f"{user} added reaction {reaction.emoji} to bot's message")
 
-    ctx = await bot.get_context(message)
-    server_id = str(ctx.guild.id)
     # Check if we need to delete the bot's message
     if reaction.emoji == "❌":
         await message.delete()
-
-        if len(message.embeds) == 0:
-            return
-        # Assume the message only has 1 embed, as multiple aren't possible
-        embed = message.embeds[0]
-        if embed.color == OVERVIEW_EMBED_COLOR:
-            # The overview was just deleted, so clear it from the dataset as well
-            dataset = read_dataset()
-            dataset[server_id]["overview_message_id"] = 0
-            dataset[server_id]["overview_channel_id"] = 0
-            save_dataset(dataset)
-        return
 
 
 @bot.command(name="update_prices", help="Retrieves the latest prices from Steam. Example: !update_prices.")
 async def update_prices(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
-    await update_dataset_steam_prices()
+    await update_database_steam_prices()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1534,7 +1321,7 @@ async def update_prices(ctx):
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
 async def add_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
     try:
         int(game_name)
@@ -1543,38 +1330,45 @@ async def add_game(ctx, game_name):
     except ValueError:
         pass
 
-    dataset = read_dataset()
+    db_session = SessionMaker()
+
     try:
-        game_data = filter_game_dataset(dataset, server_id, game_name)
-        log(f"Game already added: {str(game_data)}")
-        await ctx.send("This game has already been added.")
-        return
-    except CouldNotFindGameException:
-        pass
+        try:
+            game = get_game(db_session, server_id, game_name)   # TODO handle case when the game is already finished
+            log(f"Game already added: {str(game.name)}")
+            await ctx.send("This game has already been added.")
+            return
+        except GameNotFoundException:
+            last_game_id = (
+                db_session.query(Game.id)
+                    .filter(Game.server_id == server_id)
+                    .order_by(Game.id.desc())
+                    .limit(1)
+                    .scalar()
+            )
+            game_id = (last_game_id + 1) if last_game_id is not None else 1
+            game = Game(
+                server_id=server_id,
+                id=game_id,
+                name=game_name,
+                submitter=str(ctx.author)
+            )
 
-    # Create an object for the new game,
-    game_data = GameData()
+        # Search Steam for this game and save the info
+        steam_game_info = search_steam_for_game(game_name)
+        if steam_game_info is not None and \
+                "id" in steam_game_info:
+            game.steam_id = steam_game_info["id"]
+            game_price = await get_game_price(game.steam_id)
+            if game_price is not None:
+                game.price_current = game_price["price_current"]
+                game.price_original = game_price["price_original"]
 
-    # Search Steam for this game and save the info
-    steam_game_info = search_steam_for_game(game_name)
-    if steam_game_info is not None and \
-            "id" in steam_game_info:
-        game_data.steam_id = steam_game_info["id"]
-        game_price = await get_game_price(game_data.steam_id)
-        if game_price is not None:
-            game_data.price_current = game_price["price_current"]
-            game_data.price_original = game_price["price_original"]
+        db_session.add(game)
+        db_session.commit()
 
-    # Add miscellaneous info, add the game to the server's dataset, and save the dataset
-    game_data.name = game_name
-    game_data.submitter = str(ctx.author)
-    dataset = add_game_to_dataset(dataset, server_id, game_data)
-
-    # Set the correct member count
-    member_count = len([member for member in ctx.guild.members if not member.bot])
-    dataset[server_id]["member_count"] = member_count
-
-    save_dataset(dataset)
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1583,14 +1377,19 @@ async def add_game(ctx, game_name):
 @bot.command(name="remove", help="Removes a game from the list. Example: !remove \"game name\".")
 async def remove_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Remove the game and save the dataset again without the game
-    del dataset[server_id]["games"][str(game_data.id)]
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        # Remove the game from the database
+        db_session.delete(game)
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1599,40 +1398,39 @@ async def remove_game(ctx, game_name):
 @bot.command(name="finish", help="Marks a game as finished, moving it to the completed games list. Example: !finish \"game name\".")
 async def finish_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Create a FinishedGameData object for this game and save it
-    finished_game = FinishedGameData(json_data=game_data.to_json())
-    finished_games = dataset[server_id].get("finished_games", {})
-    finished_games[str(game_data.id)] = finished_game.to_json()
-    dataset[server_id]["finished_games"] = finished_games
+    try:
+        game = get_game(db_session, server_id, game_name)
 
-    # Remove the game from the regular list and save the dataset again
-    del dataset[server_id]["games"][str(game_data.id)]
-    save_dataset(dataset)
+        game.finished = True
+        game.finished_timestamp = time.time()
+        db_session.commit()
 
-    # Get the hall of game channel, or the current channel if it does not yet exist
-    server_dataset = dataset.get(server_id)
-    channel_id = server_dataset.get("hall_of_game_channel_id", ctx.channel.id)
-    channel_object = bot.get_channel(channel_id)
-    if channel_object is None:
-        log(f"Discord could not find channel with ID {channel_id}.")
-    else:
-        game_text = game_data.name
-        if game_data.steam_id != 0:
-            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
-            game_text = f"[{game_text}](<{game_link}>)"     # Surround the link in <> to prevent a link embed from being added
-        # Create a thread for the game and its screenshots in the hall of game channel
-        banner_file = get_steam_game_banner(game_data.steam_id)
-        if banner_file is None:
-            banner_message = await channel_object.send(game_text)
+        hog_message = await get_live_message_object(server_id, LiveMessageType.HALL_OF_GAME)
+        if hog_message:
+            hog_channel = hog_message.channel
         else:
-            banner_message = await channel_object.send(game_text, file=banner_file)
-        await banner_message.create_thread(name=game_data.name)
-        await channel_object.create_thread(name=f"{game_data.name} screenshots", type=discord.ChannelType.public_thread)
+            hog_channel = ctx.channel
+
+        game_text = game.name
+        if game.steam_id is not None:
+            game_link = f"https://store.steampowered.com/app/{game.steam_id}"
+            game_text = f"[{game_text}](<{game_link}>)"     # Surround the link in <> to prevent a link embed from being added
+
+        # Create a thread for the game and its screenshots in the hall of game channel
+        banner_file = get_steam_game_banner(game.steam_id)
+        if banner_file is None:
+            banner_message = await hog_channel.send(game_text)
+        else:
+            banner_message = await hog_channel.send(game_text, file=banner_file)
+        await banner_message.create_thread(name=game.name)
+        await hog_channel.create_thread(name=f"{game.name} screenshots", type=discord.ChannelType.public_thread)
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1641,7 +1439,7 @@ async def finish_game(ctx, game_name):
 @bot.command(name="enjoyed", help="Rate how much you enjoyed a game, between 0-10. Example: !enjoyed \"game name\" 7.5. Default rating is 5.")
 async def enjoyed(ctx, game_name, score=5.0):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
     try:
         score = float(score)
@@ -1650,13 +1448,16 @@ async def enjoyed(ctx, game_name, score=5.0):
         await ctx.send("Rating must be a number between 0 and 10.")
         return
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name, finished=True)
+    db_session = SessionMaker()
 
-    # Update the vote and save the new game data
-    game_data.enjoyment_scores[str(ctx.author)] = score
-    dataset[server_id]["finished_games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name, finished=True)
+
+        game.enjoyment_scores[ctx.author.id] = score
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_hall_of_game(server_id)
     await ctx.message.delete()
@@ -1665,29 +1466,37 @@ async def enjoyed(ctx, game_name, score=5.0):
 @bot.command(name="hog", help=":boar:")
 async def hall_of_game(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
     hog_embed = generate_hog_embed(ctx.guild.id)
     if hog_embed is None:
         await ctx.send("Nothing to show (yet).")
         return
 
-    message = await ctx.send(embed=hog_embed)
+    message = await ctx.send(embed=hog_embed)   # type: discord.Message
 
-    dataset = read_dataset()
+    db_session = SessionMaker()
 
-    # Store the new message ID
-    dataset[server_id]["hall_of_game_message_id"] = message.id
-    dataset[server_id]["hall_of_game_channel_id"] = ctx.channel.id
-    save_dataset(dataset)
+    try:
+        hog_live_message = LiveMessage(
+            server_id=server_id,
+            channel_id=message.channel.id,
+            message_id=message.id,
+            message_type=LiveMessageType.HALL_OF_GAME,
+        )
+        db_session.add(hog_live_message)
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await ctx.message.delete()
 
 
 @bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. Default vote is 5.")
-async def rate_game(ctx, game_name, score=5.0):
+async def vote_game(ctx, game_name, score=5.0):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
     try:
         score = float(score)
@@ -1696,70 +1505,71 @@ async def rate_game(ctx, game_name, score=5.0):
         await ctx.send("Score must be a number between 0 and 10.")
         return
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Update the vote and save the new game data
-    game_data.votes[str(ctx.author)] = score
-    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        vote = db_session.get(Vote, (server_id, game.id, ctx.author.id))    # type: Vote
+        if vote is None:
+            vote = Vote(server_id=server_id, game_id=game.id, user_id=ctx.author.id)
+            db_session.add(vote)
+
+        vote.score = score
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
-    await ctx.message.delete()
-
-
-@bot.command(name="overview", help="Displays a live overview of the most promising games. Example: !display.")
-async def overview(ctx):
-    log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
-
-    overview_embed = generate_overview_embeds(ctx.guild.id)[0]
-    if overview_embed is None:
-        await ctx.send("No games registered for this server yet.")
-        return
-
-    message = await ctx.send(embed=overview_embed)
-    page_buttons_view = PageButtonsView(overview_embed.title, message.id, update_overview, server_id)
-    await message.edit(embed=overview_embed, view=page_buttons_view)
-
-    # Remove the buttons from the old overview message
-    old_message = await get_live_message_object(server_id, "overview")
-    if old_message is not None:
-        await old_message.edit(embed=overview_embed, view=None)
-
-    dataset = read_dataset()
-    # Store the new message ID
-    dataset[server_id]["overview_message_id"] = message.id
-    dataset[server_id]["overview_channel_id"] = ctx.channel.id
-    save_dataset(dataset)
-
     await ctx.message.delete()
 
 
 @bot.command(name="list", help="Displays a sorted list of all games. Example: !list.")
 async def list_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
     list_embed = (await generate_list_embeds(server_id))[0]
     if list_embed is None:
         await ctx.send("No games registered for this server yet.")
         return
 
-    message = await ctx.send(embed=list_embed)
-    page_buttons_view = PageButtonsView(list_embed.title, message.id, update_list, server_id)
-    await message.edit(embed=list_embed, view=page_buttons_view)
-
     # Remove the buttons from the old list message
-    old_message = await get_live_message_object(server_id, "list")
-    if old_message is not None:
-        await old_message.edit(embed=list_embed, view=None)
+    list_message_old = await get_live_message_object(server_id, LiveMessageType.LIST)
+    if list_message_old is not None:
+        await list_message_old.edit(embed=list_embed, view=None)
 
-    dataset = read_dataset()
-    # Store the new message ID
-    dataset[server_id]["list_message_id"] = message.id
-    dataset[server_id]["list_channel_id"] = ctx.channel.id
-    save_dataset(dataset)
+        db_session = SessionMaker()
+
+        try:
+            # Delete the old list message from the database
+            list_live_message_old = db_session.get(LiveMessage, list_message_old.id)    # type: LiveMessage
+            if list_live_message_old is not None:
+                db_session.delete(list_live_message_old)
+                db_session.commit()
+
+        finally:
+            db_session.close()
+
+    list_message = await ctx.send(embed=list_embed)
+    page_buttons_view = PageButtonsView(list_embed.title, list_message.id, update_list, server_id)
+    await list_message.edit(embed=list_embed, view=page_buttons_view)
+
+    db_session = SessionMaker()
+
+    try:
+        list_live_message = LiveMessage(
+            server_id=server_id,
+            channel_id=list_message.channel.id,
+            message_id=list_message.id,
+            message_type=LiveMessageType.LIST,
+        )
+        db_session.add(list_live_message)
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await ctx.message.delete()
 
@@ -1767,171 +1577,196 @@ async def list_games(ctx):
 @bot.command(name="play_without", help="Displays a sorted list of games that the given user rated low. Example: !play_without alexsaro. :cry:")
 async def play_without(ctx, username):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
-    member_names = [member.name for member in ctx.guild.members if not member.bot]
-    if username not in member_names:
-        await ctx.send(f"Could not find user named \"{username}\".")
-        return
+    db_session = SessionMaker()
 
-    dataset = read_dataset()
-    # Try to narrow down the dataset to this server
-    if server_id not in dataset:
-        log(f"Could not find server {server_id} in the dataset.")
-        return None
+    try:
+        user = (
+            db_session.query(User)
+                .filter(User.global_name.ilike(username))
+                .first()
+        )   # type: User
+        if user is None:
+            await ctx.send(f"Could not find user named \"{username}\".")
+            return
 
-    server_dataset = dataset[server_id]
+        # TODO get member count from database
+        members = [member for member in ctx.guild.members if not member.bot]
+        member_count = len(members)
+        game_scores = []    # type: list[tuple[Game, int]]
 
-    member_count = server_dataset["member_count"]
-    game_dataset = server_dataset.get("games", {})
-    game_scores = []
+        games = (
+            db_session.query(Game)
+                .filter(Game.server_id == server_id)
+                .filter(Game.finished.is_(False))
+                .all()
+        )   # type: list[Game]
 
-    for game_data_dict in game_dataset.values():
-        game_data = GameData(json_data=game_data_dict)
+        for game in games:
+            votes = (
+                db_session.query(Vote)
+                    .filter(Vote.server_id == server_id)
+                    .filter(Vote.game_id == game.id)
+                    .all()
+            )  # type: list[Vote]
 
-        # Skip games that the user voted 5 or higher on
-        votes = game_data.votes
-        if votes.get(username, 5) >= 5:
-            continue
+            # Skip games that the user voted 5 or higher on
+            vote_user = next((vote.score for vote in votes if vote.user_id == user.id), 5)
+            if vote_user >= 5:
+                continue
 
-        # Count the score for this game
-        total_score = 0
-        for voter, score in votes.items():
-            if voter != username:
-                total_score += score
+            # Count the score for this game
+            total_score = 0
+            for vote in votes:
+                if vote.user_id != user.id:
+                    total_score += vote.score
+                else:
+                    total_score -= vote.score * member_count
+            # Use a score of 5 for the non-voters
+            non_voters_ids = member_count - len(votes)
+            total_score += non_voters_ids * 5
+
+            game_scores.append((game, total_score))
+
+        sorted_games = sorted(game_scores, key=lambda x: x[1], reverse=True)
+
+        games_list = []     # type: list[str]
+        for game, score in sorted_games:
+            votes = (
+                db_session.query(Vote)
+                    .filter(Vote.server_id == server_id)
+                    .filter(Vote.game_id == game.id)
+                    .all()
+            )  # type: list[Vote]
+
+            # Get everyone who hasn't voted yet
+            non_voters_ids = [member.id for member in members]
+            for vote in votes:
+                if vote.user_id in non_voters_ids:
+                    non_voters_ids.remove(vote.user_id)
+            non_voters_text = get_users_aliases_string(server_id, non_voters_ids)
+
+            game_text = f"{game.id} -"
+            if game.steam_id is not None:
+                game_link = "https://store.steampowered.com/app/" + str(game.steam_id)
+                game_text += f" [{game.name}]({game_link})"
             else:
-                total_score -= score * member_count
-        # Use a score of 5 for the non-voters
-        non_voters = member_count - len(votes)
-        total_score += non_voters * 5
+                game_text += " " + game.name
+            price_text = generate_price_text(game)
+            if price_text:
+                game_text += " " + generate_price_text(game)
+            if non_voters_text:
+                game_text += " " + non_voters_text
 
-        game_scores.append((game_data, total_score))
+            games_list.append(game_text)
 
-    sorted_games = sorted(game_scores, key=lambda x: x[1], reverse=True)
+        title_text = f"Potential games to play without {user.global_name}"
+        games_list_text = "\n".join(games_list)
 
-    guild = get_discord_guild_object(server_id)
-    if guild is None:
-        log(f"Could not get guild for server ID {server_id}.")
-        return None
+        list_embed = discord.Embed(
+            title=title_text,
+            description=games_list_text,
+            color=LIST_PLAY_WITHOUT_EMBED_COLOR
+        )
+        embeds = paginate_embed_description(list_embed)
+        list_embed = embeds[0]
 
-    games_list = []
-    for game_data, score in sorted_games:
-        # Get everyone who hasn't voted yet
-        non_voters = [member.name for member in guild.members if not member.bot]
-        for name in game_data.votes.keys():
-            if name in non_voters:
-                non_voters.remove(name)
-        non_voters_text = get_users_aliases_string(server_dataset, non_voters)
+        await ctx.send(embed=list_embed)
 
-        game_text = f"{game_data.id} -"
-        if game_data.steam_id != 0:
-            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
-            game_text += f" [{game_data.name}]({game_link})"
-        else:
-            game_text += " " + game_data.name
-        price_text = generate_price_text(game_data)
-        if price_text:
-            game_text += " " + generate_price_text(game_data)
-        if non_voters_text:
-            game_text += " " + non_voters_text
+    finally:
+        db_session.close()
 
-        games_list.append(game_text)
-
-    title_text = f"Potential games to play without {username}"
-    games_list_text = "\n".join(games_list)
-
-    list_embed = discord.Embed(
-        title=title_text,
-        description=games_list_text,
-        color=LIST_PLAY_WITHOUT_EMBED_COLOR
-    )
-    embeds = paginate_embed_description(list_embed)
-    list_embed = embeds[0]
-
-    await ctx.send(embed=list_embed)
     await ctx.message.delete()
 
 
 @bot.command(name="owned_games", help="Displays a list of games that everyone has marked as owned. Example: !owned_games.")
 async def display_owned_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
-    dataset = read_dataset()
-    # Try to narrow down the dataset to this server
-    if server_id not in dataset:
-        log(f"Could not find server {server_id} in the dataset.")
-        return None
+    db_session = SessionMaker()
 
-    server_dataset = dataset[server_id]
+    try:
+        # TODO get member count from database
+        members = [member for member in ctx.guild.members if not member.bot]
+        member_count = len(members)
 
-    member_count = server_dataset["member_count"]
-    game_dataset = server_dataset.get("games", {})
-    owned_games = []
+        games = (
+            db_session.query(Game)
+                .filter(Game.server_id == server_id)
+                .filter(Game.finished.is_(False))
+                .all()
+        )   # type: list[Game]
 
-    for game_data_dict in game_dataset.values():
-        game_data = GameData(json_data=game_data_dict)
+        owned_games = []    # type: list[Game]
+        for game in games:
+            owned_count = sum(1 for owned in game.owned.values() if owned is True)
+            if owned_count >= member_count:
+                owned_games.append(game)
 
-        owned_count = sum(1 for owned in game_data.owned.values() if owned is True)
+        games_list = []
+        for game in owned_games:
+            game_text = f"{game.id} -"
+            if game.steam_id is not None:
+                game_link = f"https://store.steampowered.com/app/{game.steam_id}"
+                game_text += f" [{game.name}]({game_link})"
+            else:
+                game_text += " " + game.name
+            price_text = generate_price_text(game)
+            if price_text:
+                game_text += " " + generate_price_text(game)
 
-        if owned_count >= member_count:
-            owned_games.append(game_data)
+            games_list.append(game_text)
 
-    guild = get_discord_guild_object(server_id)
-    if guild is None:
-        log(f"Could not get guild for server ID {server_id}.")
-        return None
+        title_text = f"Games owned by everyone"
+        games_list_text = "\n".join(games_list)
 
-    games_list = []
-    for game_data in owned_games:
-        game_text = f"{game_data.id} -"
-        if game_data.steam_id != 0:
-            game_link = "https://store.steampowered.com/app/" + str(game_data.steam_id)
-            game_text += f" [{game_data.name}]({game_link})"
-        else:
-            game_text += " " + game_data.name
-        price_text = generate_price_text(game_data)
-        if price_text:
-            game_text += " " + generate_price_text(game_data)
+        list_embed = discord.Embed(
+            title=title_text,
+            description=games_list_text,
+            color=LIST_OWNED_GAMES_EMBED_COLOR
+        )
+        embeds = paginate_embed_description(list_embed)
+        list_embed = embeds[0]
 
-        games_list.append(game_text)
+        await ctx.send(embed=list_embed)
 
-    title_text = f"Games owned by everyone"
-    games_list_text = "\n".join(games_list)
+    finally:
+        db_session.close()
 
-    list_embed = discord.Embed(
-        title=title_text,
-        description=games_list_text,
-        color=LIST_OWNED_GAMES_EMBED_COLOR
-    )
-    embeds = paginate_embed_description(list_embed)
-    list_embed = embeds[0]
-
-    await ctx.send(embed=list_embed)
     await ctx.message.delete()
 
 
 @bot.command(name="edit", help="Displays the given game as a message to be able edit it using its reactions. Example: !edit \"game name\".")
 async def edit(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
-    edit_game = EditGame(game_name, server_id, ctx.channel.id)
-    await edit_game.send_message()
+    db_session = SessionMaker()
+
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        edit_game = EditGame(game.server_id, game.id, ctx.channel.id)
+        await edit_game.send_message()
+
+    finally:
+        db_session.close()
 
     await ctx.message.delete()
 
 
 class EditGame:
 
-    def __init__(self, game_name, server_id, channel_id):
-        self.game_name = game_name
+    def __init__(self, server_id: int, game_id: int, channel_id: int):
         self.server_id = server_id
+        self.game_id = game_id
         self.channel_id = channel_id
         self.message_object = None
 
     async def send_message(self):
-        channel_object = bot.get_channel(self.channel_id)
+        channel_object = await bot.fetch_channel(self.channel_id)
 
         game_embed = self.get_embed()
         game_view = self.EditGameView(self)
@@ -1944,30 +1779,31 @@ class EditGame:
 
         await update_live_messages(self.server_id, skip_hog=True)
 
-    def get_game_data(self) -> GameData:
-        dataset = read_dataset()
-        return filter_game_dataset(dataset, self.server_id, self.game_name)
-
-    async def save_game_data(self, game_data: GameData):
-        dataset = read_dataset()
-        # Save the edited game info
-        dataset[self.server_id]["games"][str(game_data.id)] = game_data.to_json()
-        save_dataset(dataset)
-
-        await self.update_message()
+    def get_game(self, db_session: Session) -> Game:
+        return (
+            db_session.query(Game)
+                .filter(Game.server_id == self.server_id)
+                .filter(Game.id == self.game_id)
+                .filter(Game.finished.is_(False))
+                .first()
+        )  # type: Game
 
     def get_embed(self):
-        game_data = self.get_game_data()
-        dataset = read_dataset()
-        server_dataset = dataset[self.server_id]
+        db_session = SessionMaker()
 
-        # Get info on the game and display it in an embed
-        embed_field_info = get_game_embed_field(game_data, server_dataset)
-        title = embed_field_info["name"]
-        embed_field_info["name"] = ""
-        game_embed = discord.Embed(title=title, color=EDIT_GAME_EMBED_COLOR)
-        game_embed.add_field(**embed_field_info)
-        return game_embed
+        try:
+            game = self.get_game(db_session)
+
+            # Get info on the game and display it in an embed
+            embed_field_info = get_game_embed_field(game)
+            title = embed_field_info["name"]
+            embed_field_info["name"] = ""
+            game_embed = discord.Embed(title=title, color=EDIT_GAME_EMBED_COLOR)
+            game_embed.add_field(**embed_field_info)
+            return game_embed
+
+        finally:
+            db_session.close()
 
     async def delete_message(self):
         await self.message_object.delete()
@@ -1986,30 +1822,38 @@ class EditGame:
             self.add_item(Button(style=discord.ButtonStyle.red, label="Close", custom_id="close"))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
+            db_session = SessionMaker()
+
             try:
                 await interaction.response.defer()
 
                 button_id = interaction.data.get("custom_id")
-                game_data = self.edit_game_object.get_game_data()
-                username = interaction.user.name
+                game = self.edit_game_object.get_game(db_session)
+                user_id = str(interaction.user.id)
 
                 if button_id == "owned":
-                    owned = game_data.owned.get(username, True)
-                    game_data.owned[username] = not owned
+                    owned = game.owned.get(user_id, True)
+                    game.owned[user_id] = not owned
                 elif button_id == "played_before":
-                    played_before = game_data.played_before.get(username, True)
-                    game_data.played_before[username] = not played_before
+                    played_before = game.played_before.get(user_id, True)
+                    game.played_before[user_id] = not played_before
                 elif button_id == "local":
-                    game_data.local = not game_data.local
+                    game.local = not game.local
                 elif button_id == "close":
                     await self.edit_game_object.delete_message()
                     return True
                 else:
                     return True
 
-                await self.edit_game_object.save_game_data(game_data)
+                db_session.commit()
+
+                await self.edit_game_object.update_message()
+
             except Exception as e:
                 await send_error_message(e)
+
+            finally:
+                db_session.close()
 
             return True
 
@@ -2021,14 +1865,28 @@ class EditGame:
             super().__init__(placeholder="Vote", options=options)
 
         async def callback(self, interaction: discord.Interaction):
+            db_session = SessionMaker()
+
             try:
-                vote = int(self.values[0])
-                username = interaction.user.name
-                game_data = self.edit_game_object.get_game_data()
-                game_data.votes[username] = vote
-                await self.edit_game_object.save_game_data(game_data)
+                score = int(self.values[0])
+                user_id = interaction.user.id
+                game = self.edit_game_object.get_game(db_session)
+
+                vote = db_session.get(Vote, (game.server_id, game.id, user_id))     # type: Vote
+                if vote is None:
+                    vote = Vote(server_id=game.server_id, game_id=game.id, user_id=user_id)
+                    db_session.add(vote)
+
+                vote.score = score
+                db_session.commit()
+
+                await self.edit_game_object.update_message()
+
             except Exception as e:
                 await send_error_message(e)
+
+            finally:
+                db_session.close()
 
     class PlayersMenu(Select):
         def __init__(self, edit_game_object):
@@ -2038,27 +1896,39 @@ class EditGame:
             super().__init__(placeholder="Player count", options=options)
 
         async def callback(self, interaction: discord.Interaction):
+            db_session = SessionMaker()
+
             try:
                 player_count = int(self.values[0])
-                game_data = self.edit_game_object.get_game_data()
-                game_data.player_count = player_count
-                await self.edit_game_object.save_game_data(game_data)
+                game = self.edit_game_object.get_game(db_session)
+                game.player_count = player_count
+
+                db_session.commit()
+
+                await self.edit_game_object.update_message()
+
             except Exception as e:
                 await send_error_message(e)
+
+            finally:
+                db_session.close()
 
 
 @bot.command(name="tag", help="Adds an informative tag to a game. Example: !tag \"game name\" \"PvP only\".")
 async def add_tag(ctx, game_name, tag_text):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Update the tags and save the new game data
-    game_data.tags.append(tag_text)
-    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        game.tags.append(tag_text)
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2067,19 +1937,22 @@ async def add_tag(ctx, game_name, tag_text):
 @bot.command(name="remove_tag", help="Removes a tag from a game. Example: !remove_tag \"game name\" \"PvP only\".")
 async def remove_tag(ctx, game_name, tag_text):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    if tag_text not in game_data.tags:
-        await ctx.send(f"Game \"{game_data.name}\" does not have tag \"{tag_text}\".")
-        return
+    try:
+        game = get_game(db_session, server_id, game_name)
 
-    # Remove the tag and save the new game data
-    game_data.tags.remove(tag_text)
-    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+        if tag_text not in game.tags:
+            await ctx.send(f"Game \"{game.name}\" does not have tag \"{tag_text}\".")
+            return
+
+        game.tags.remove(tag_text)
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2088,19 +1961,23 @@ async def remove_tag(ctx, game_name, tag_text):
 @bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. Defaults to \"yes\".")
 async def own(ctx, game_name, owns_game="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
+    user_id = ctx.author.id
 
     owned = parse_boolean(owns_game)
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Update the "owned" field and save the new game data
-    game_data.owned[str(ctx.author)] = owned
-    if not owned:
-        game_data.played_before[str(ctx.author)] = False
-    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        game.owned[str(user_id)] = owned
+        if not owned:
+            game.played_before[str(user_id)] = False
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2109,7 +1986,7 @@ async def own(ctx, game_name, owns_game="yes"):
 @bot.command(name="players", help="Sets with how many players a game can be played, ranging from 1-4. Example: !players \"game name\" 4.")
 async def players(ctx, game_name, player_count):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
     try:
         player_count = int(player_count)
@@ -2118,13 +1995,16 @@ async def players(ctx, game_name, player_count):
         await ctx.send("Player count must be a number between 1 and 4.")
         return
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Update the "player_count" field and save the new game data
-    game_data.player_count = player_count
-    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        game.player_count = player_count
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2133,17 +2013,20 @@ async def players(ctx, game_name, player_count):
 @bot.command(name="local", help="Sets whether a game can be played together with one copy. Example: !local \"game name\" no. Defaults to \"yes\".")
 async def set_local(ctx, game_name, is_local="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
     local = parse_boolean(is_local)
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Update the "local" field and save the new game data
-    game_data.local = local
-    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        game.local = local
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2152,17 +2035,21 @@ async def set_local(ctx, game_name, is_local="yes"):
 @bot.command(name="played", help="Sets whether you have played a game before or not. Example: !played \"game name\" no. Defaults to \"yes\".")
 async def set_played(ctx, game_name, played_before="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
+    user_id = ctx.author.id
 
     experienced = parse_boolean(played_before)
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Update the "played_before" field and save the new game data
-    game_data.played_before[str(ctx.author)] = experienced
-    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        game.played_before[str(user_id)] = experienced
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2171,7 +2058,7 @@ async def set_played(ctx, game_name, played_before="yes"):
 @bot.command(name="steam_id", help="Links a game to a steam ID for the purpose of retrieving prices. Example: !steam_id \"game name\" 105600.")
 async def set_steam_id(ctx, game_name, steam_id):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
     try:
         steam_id = int(steam_id)
@@ -2180,20 +2067,25 @@ async def set_steam_id(ctx, game_name, steam_id):
         await ctx.send("Steam ID must be a positive number.")
         return
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Update the "steam_id" field, retrieve the price again, and save the new game data
-    game_data.steam_id = steam_id
-    steam_game_info = await get_game_price(steam_id)
-    # Default to no price if the Steam game couldn't be found
-    game_data.price_current = -1
-    game_data.price_original = -1
-    if steam_game_info is not None:
-        game_data.price_current = steam_game_info["price_current"]
-        game_data.price_original = steam_game_info["price_original"]
-    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        # Update the "steam_id" field, retrieve the price again, and save the new game data
+        game.steam_id = steam_id
+        steam_game_info = await get_game_price(steam_id)
+        # Default to no price if the Steam game couldn't be found
+        game.price_current = None
+        game.price_original = None
+        if steam_game_info is not None:
+            game.price_current = steam_game_info["price_current"]
+            game.price_original = steam_game_info["price_original"]
+
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2202,16 +2094,19 @@ async def set_steam_id(ctx, game_name, steam_id):
 @bot.command(name="alias", help="Sets an alias for yourself, to be displayed in the overview. Example: !alias :sunglasses:. Leave empty to clear it.")
 async def set_alias(ctx, new_alias=None):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
+    user_id = ctx.author.id
 
-    dataset = read_dataset()
-    server_dataset = dataset[server_id]
+    db_session = SessionMaker()
 
-    # Store the new alias
-    aliases = server_dataset.get("aliases", {})
-    aliases[str(ctx.author)] = new_alias
-    server_dataset["aliases"] = aliases
-    save_dataset(dataset)
+    try:
+        server_member = db_session.get(ServerMember, (user_id, server_id))  # type: ServerMember
+
+        server_member.alias = new_alias
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2220,15 +2115,18 @@ async def set_alias(ctx, new_alias=None):
 @bot.command(name="rename", help="Change the name of a game. Example: !rename \"game name\" \"new game name\".")
 async def rename_game(ctx, game_name, new_game_name):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
+    server_id = ctx.guild.id
 
-    dataset = read_dataset()
-    game_data = filter_game_dataset(dataset, server_id, game_name)
+    db_session = SessionMaker()
 
-    # Update the name and save the new game data
-    game_data.name = new_game_name
-    dataset[server_id]["games"][str(game_data.id)] = game_data.to_json()
-    save_dataset(dataset)
+    try:
+        game = get_game(db_session, server_id, game_name)
+
+        game.name = new_game_name
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2237,64 +2135,69 @@ async def rename_game(ctx, game_name, new_game_name):
 @bot.command(name="affinity", help="Shows how similarly you vote to other people. Example: !affinity.")
 async def show_affinity(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
-    username = str(ctx.author)
+    server_id = ctx.guild.id
+    user_id = ctx.author.id
 
-    dataset = read_dataset()
+    db_session = SessionMaker()
 
-    # Narrow down the dataset to a specific server
-    if server_id not in dataset:
-        await ctx.send("No games registered for this server yet.")
-        return
-    game_dataset = dataset[server_id]["games"]
+    try:
+        votes = (
+            db_session.query(Vote)
+                .filter(Vote.server_id == server_id)
+                .all()
+        )   # type: list[Vote]
 
-    similarity_scores = {}
-    for game_json in game_dataset.values():
-        votes = game_json.get("votes", {})
-        # Skip this game if the user hasn't voted on it
-        if username not in votes:
-            continue
+        votes_by_game = defaultdict(list)   # type: dict[int, list[Vote]]
+        for vote in votes:
+            votes_by_game[vote.game_id].append(vote)
 
-        base_vote = votes[username]
-        # Check the votes for this game
-        for user, vote in votes.items():
-            if user == username:
+        similarity_scores = defaultdict(lambda: defaultdict(int))   # type: dict[int, dict[str, int]]
+        for game_id, game_votes in votes_by_game.items():
+            # Skip this game if the user hasn't voted on it
+            vote_user = next((vote for vote in game_votes if vote.user_id == user_id), None)
+            if vote_user is None:
                 continue
 
-            # If this is the first time we see this user, add them to the scores dict
-            if user not in similarity_scores:
-                similarity_scores[user] = {"error_sum": 0, "count": 0}
+            # Check the votes for this game
+            for vote in game_votes:
+                if vote.user_id == user_id:
+                    continue
 
-            similarity_scores[user]["error_sum"] += abs(base_vote - vote)
-            similarity_scores[user]["count"] += 1
+                similarity_scores[vote.user_id]["error_sum"] += abs(vote_user.score - vote)
+                similarity_scores[vote.user_id]["votes"] += 1
 
-    similarity_percentages = []
-    for user, stats in similarity_scores.items():
-        if stats["count"] > 0:
-            # Calculate the Mean Absolute Error
-            mae = stats["error_sum"] / stats["count"]
-            # Convert it to a percentage
-            similarity = (1 - (mae / 10)) * 100
-            similarity_percentages.append((user, round(similarity, 2)))
+        similarity_percentages = []
+        for user, stats in similarity_scores.items():
+            if stats["count"] > 0:
+                # Calculate the Mean Absolute Error
+                mae = stats["error_sum"] / stats["count"]
+                # Convert it to a percentage
+                similarity = (1 - (mae / 10)) * 100
+                similarity_percentages.append((user, round(similarity, 2)))
 
-    # Sort it so the highest affinity shows up first
-    similarity_percentages = sorted(similarity_percentages, key=lambda x: x[1], reverse=True)
+        # Sort it so the highest affinity shows up first
+        similarity_percentages = sorted(similarity_percentages, key=lambda x: x[1], reverse=True)
 
-    if len(similarity_percentages) == 0:
-        affinity_text = "No people have voted on the same games."
-    else:
-        entries = []
-        for user, affinity in similarity_percentages:
-            entries.append(f"{user}: {affinity}%")
-        affinity_text = "\n".join(entries)
+        if len(similarity_percentages) == 0:
+            affinity_text = "No people have voted on the same games."
+        else:
+            entries = []
+            for user, affinity in similarity_percentages:
+                entries.append(f"{user}: {affinity}%")
+            affinity_text = "\n".join(entries)
 
-    # Get info on the game and display it in an embed
-    title = f"{username}'s affinity with others"
-    affinity_embed = discord.Embed(
-        title=title,
-        description=affinity_text,
-        color=AFFINITY_EMBED_COLOR
-    )
+        user_db_entry = db_session.get(User, user_id)   # type: User
+
+        # Get info on the game and display it in an embed
+        title = f"{user_db_entry.global_name}'s affinity with others"
+        affinity_embed = discord.Embed(
+            title=title,
+            description=affinity_text,
+            color=AFFINITY_EMBED_COLOR
+        )
+
+    finally:
+        db_session.close()
 
     await ctx.send(embed=affinity_embed)
     await ctx.message.delete()
@@ -2303,48 +2206,55 @@ async def show_affinity(ctx):
 @bot.command(name="send_me_free_games", help="Opt in or out of receiving a message when a game is free to keep. Example: !send_me_free_games no. Defaults to \"yes\".")
 async def send_me_free_games(ctx, notify_on_free_game="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
-    user_id = str(ctx.author.id)
+    user_id = ctx.author.id
 
     notify = parse_boolean(notify_on_free_game)
 
-    users_to_notify = read_file_safe(USERS_NOTIFY_FREE_GAMES_FILE)  # type: dict[str, str]
-    if not notify:
-        users_to_notify.pop(user_id, None)
-    else:
-        users_to_notify[user_id] = ""   # Just save an empty string as the value for now. Maybe we'll have a use for the value in the future
+    db_session = SessionMaker()
 
-        # Notify the interested user about all of the currently active deals
-        user = await get_discord_user(int(user_id))
-        await user.send("From now on, I will send you a message whenever a game becomes free to keep.")
-        active_deals = read_file_safe(FREE_TO_KEEP_GAMES_FILE)  # type: dict[str, int, dict]
-        for deal in active_deals.values():
-            free_game = FreeGameDeal(json_data=deal)
-            formatted_message = free_game.to_message_text()
-            await user.send(formatted_message)
+    try:
+        free_game_subscriber = db_session.get(FreeGameSubscriber, user_id)  # type: FreeGameSubscriber
+        if not notify:
+            if free_game_subscriber is not None:
+                db_session.delete(free_game_subscriber)
+        else:
+            free_game_subscriber = FreeGameSubscriber(
+                user_id=user_id,
+            )
+            db_session.add(free_game_subscriber)
 
-    with open(USERS_NOTIFY_FREE_GAMES_FILE, "w") as file:
-        json.dump(users_to_notify, file, indent=4)
+            # Notify the interested user about all of the currently active deals
+            user = await get_discord_user(user_id)
+            await user.send("From now on, I will send you a message whenever a game becomes free to keep.")
+
+            free_games = db_session.query(FreeGame).all()   # type: list[FreeGame]
+            for free_game in free_games:
+                formatted_message = free_game_to_message_text(free_game)
+                await user.send(formatted_message)
+
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await ctx.message.delete()
 
 
-def get_users_voice_channel(username, server_id):
+def get_users_voice_channel(user_id: int, server_id: int):
     """
     Returns the voice channel the user is in, or None if they're not in a voice channel or could not be found.
     """
-    username = str(username)
-
     guild = get_discord_guild_object(server_id)
     if guild is None:
         return None
 
-    user = guild.get_member_named(username)
+    user = guild.get_member(user_id)    # type: discord.Member
     if user is None:
-        log(f"No user named {username} found.")
+        log(f"No user with ID {user_id} found.")
         return None
 
     if user.voice is None or user.voice.channel is None:
-        print(f"{username} is not in a voice channel.")
+        log(f"User with ID {user_id} is not in a voice channel.")
         return None
 
     return user.voice.channel
@@ -2370,15 +2280,15 @@ async def play_audio(voice_channel: discord.VoiceChannel, audio_path):
     await voice_client.disconnect()
 
 
-async def play_bedtime_audio(username, server_id, late_reminder=False):
-    voice_channel = get_users_voice_channel(username, server_id)
+async def play_bedtime_audio(user_id: int, server_id: int, late_reminder: bool = False):
+    voice_channel = get_users_voice_channel(user_id, server_id)
     if voice_channel is None:
         return
 
     user_specific_bedtime_mp3 = f"bedtime_"
     if late_reminder:
         user_specific_bedtime_mp3 += "late_"
-    user_specific_bedtime_mp3 += f"{username}.mp3"
+    user_specific_bedtime_mp3 += f"{user_id}.mp3"
 
     # If the user has a unique bedtime mp3, play that
     if os.path.isfile(user_specific_bedtime_mp3):
@@ -2395,8 +2305,8 @@ async def play_bedtime_audio(username, server_id, late_reminder=False):
 @bot.command(name="bedtime", help="Sets a reminder for your bedtime (CET). Example: !bedtime 21:30.")
 async def set_bedtime(ctx, bedtime):
     log(f"{ctx.author}: {ctx.message.content}")
-    server_id = str(ctx.guild.id)
-    username = str(ctx.author.name)
+    server_id = ctx.guild.id
+    user_id = ctx.author.id
 
     try:
         bedtime_split = bedtime.split(":")
@@ -2408,49 +2318,54 @@ async def set_bedtime(ctx, bedtime):
         await ctx.send("Invalid time given.")
         return
 
-    dataset = read_dataset()
-    server_dataset = dataset.get(server_id, {})
-    bedtimes = server_dataset.get("bedtimes", {})
+    db_session = SessionMaker()
 
-    # First stop any existing bedtimes for this user
-    if username in bedtimes:
-        old_job_id = bedtimes[username]["job_id"]
-        old_job_late_id = bedtimes[username]["job_late_id"]
-        try:
-            scheduler.remove_job(old_job_id)
-        except JobLookupError as e:
-            await send_error_message(f"Error! Unable to remove scheduled bedtime job with id {old_job_id}. {e}")
-        try:
-            scheduler.remove_job(old_job_late_id)
-        except JobLookupError as e:
-            await send_error_message(f"Error! Unable to remove scheduled late bedtime job with id {old_job_late_id}. {e}")
+    try:
+        bedtime_old = db_session.get(Bedtime, (user_id, server_id))    # type: Bedtime
 
-    # If a negative value was given, remove the bedtime alarm
-    if hour < 0 or minute < 0:
-        bedtimes.pop(username, None)
-    else:
-        # Schedule the new bedtime
-        job = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[username, server_id], id=f"{server_id}_bedtime_{username}")
+        # First stop any existing bedtimes for this user
+        if bedtime_old is not None:
+            try:
+                scheduler.remove_job(bedtime_old.scheduler_job_id)
+            except JobLookupError as e:
+                await send_error_message(f"Error! Unable to remove scheduled bedtime job with id {bedtime_old.scheduler_job_id}. {e}")
+            try:
+                scheduler.remove_job(bedtime_old.scheduler_job_late_id)
+            except JobLookupError as e:
+                await send_error_message(f"Error! Unable to remove scheduled late bedtime job with id {bedtime_old.scheduler_job_late_id}. {e}")
 
-        # Also schedule a later reminder
-        bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
-        bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
-        hour_late = bedtime_late.hour
-        minute_late = bedtime_late.minute
-        job_late = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[username, server_id, True], id=f"{server_id}_bedtime_late_{username}")
+        # If a negative value was given, remove the bedtime alarm
+        if hour < 0 or minute < 0:
+            if bedtime_old is not None:
+                db_session.delete(bedtime_old)
+        else:
+            # Schedule the new bedtime
+            job = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute),
+                                    args=[user_id, server_id], id=f"{server_id}_bedtime_{user_id}")
 
-        # Save the new bedtime
-        user_bedtime_data = {
-            "time": f"{hour:02}:{minute:02}",
-            "job_id": job.id,
-            "job_late_id": job_late.id,
-        }
-        bedtimes[username] = user_bedtime_data
+            # Also schedule a later reminder
+            bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
+            bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
+            hour_late = bedtime_late.hour
+            minute_late = bedtime_late.minute
+            job_late = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late),
+                                         args=[user_id, server_id, True], id=f"{server_id}_bedtime_late_{user_id}")
 
-    # Save the updated dataset
-    server_dataset["bedtimes"] = bedtimes
-    dataset[server_id] = server_dataset
-    save_dataset(dataset)
+            # Save the new bedtime
+            bedtime_new = Bedtime(
+                user_id=user_id,
+                server_id=server_id,
+                bedtime_time=datetime.time(hour=hour, minute=minute),
+                scheduler_job_id=job.id,
+                scheduler_job_late_id=job_late.id,
+            )
+            db_session.add(bedtime_new)
+            db_session.commit()
+
+        db_session.commit()
+
+    finally:
+        db_session.close()
 
     await ctx.message.delete()
 
@@ -2712,9 +2627,9 @@ async def on_command_error(ctx, error):
             await ctx.send(error.original.message)
             return
 
-    print("\nEncountered command error:")
-    print(error)
-    print(type(error))
+    log("\nEncountered command error:")
+    log(error)
+    log(type(error))
     await ctx.send(error)
     timestamp = time.time()
     with open("err.log", "a", encoding="utf-8") as f:
@@ -2728,8 +2643,8 @@ async def on_command_error(ctx, error):
 async def on_error(event, *args, **kwargs):
     if event == "on_command_error":
         return
-    print(f"\nEncountered error in {event}:")
-    print(f"args: {args}, kwargs: {kwargs}")
+    log(f"\nEncountered error in {event}:")
+    log(f"args: {args}, kwargs: {kwargs}")
     timestamp = time.time()
     with open("err.log", "a", encoding="utf-8") as f:
         f.write(f"{timestamp}\n{event}\n{args}\n{kwargs}\n\n")
@@ -2737,7 +2652,58 @@ async def on_error(event, *args, **kwargs):
     raise
 
 
+@bot.before_invoke
+async def update_db_hook(ctx):
+    if ctx.guild is None:
+        return
+
+    session = SessionMaker()
+
+    # Ensure this server is known in the database
+    server_id = ctx.guild.id
+    server = session.get(Server, server_id)
+    if server is None:
+        server = Server(id=server_id)
+        session.add(server)
+
+    # Ensure there is a database entry for this user
+    user_id = ctx.author.id
+    user = session.get(User, user_id)
+    if user is None:
+        user = User(
+            id=user_id,
+            username=ctx.author.name,
+            global_name=ctx.author.global_name
+        )
+        session.add(user)
+    elif user.username != ctx.author.name or \
+            user.global_name != ctx.author.global_name:
+        # The user has updated their name
+        user.username = ctx.author.name
+        user.global_name = ctx.author.global_name
+
+    # Ensure this user has a database entry for this server
+    member = session.get(ServerMember, (user_id, server_id))
+    if not member:
+        # TODO check if it is possible they are a bot
+        member = ServerMember(
+            user_id=user_id,
+            server_id=server_id
+        )
+        session.add(member)
+
+    session.commit()
+    session.close()
+
+
 if __name__ == "__main__":
+    # Start a thread that will restart this script whenever a Git commit has been pushed to the repo
+    updater_thread = threading.Thread(target=bot_updater.run, kwargs={"host": "127.0.0.1", "port": 5500})
+    updater_thread.start()
+
+    # Create any new tables
+    BaseModel.metadata.create_all(db.engine)
+
     # Allows for running multiple threads if needed in the future
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
