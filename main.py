@@ -63,6 +63,7 @@ BEDTIME_LATE_INTERVAL_MINUTES = 15
 EMBED_MAX_FIELDS = 25
 EMBED_MAX_CHARACTERS = 6000
 EMBED_DESCRIPTION_MAX_CHARACTERS = 4096
+MESSAGE_MAX_CHARACTERS = 2000
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 LIST_EMBED_COLOR = discord.Color.blurple()
 AFFINITY_EMBED_COLOR = discord.Color.purple()
@@ -330,7 +331,9 @@ async def send_error_message(exception):
     else:
         message = str(exception)
     developer = await get_discord_user(int(DEVELOPER_USER_ID))
-    await developer.send(f"```{message}```")
+    for i in range(0, len(message), MESSAGE_MAX_CHARACTERS - 6):
+        message_slice = message[i:i + MESSAGE_MAX_CHARACTERS - 6]
+        await developer.send(f"```{message_slice}```")
 
 
 def free_game_to_message_text(free_game: FreeGame):
