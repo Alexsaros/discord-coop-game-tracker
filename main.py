@@ -32,7 +32,7 @@ from sqlalchemy.orm import joinedload, Session
 from libraries import codenames
 from storage import db
 from storage.bedtime import Bedtime
-from storage.db import SessionMaker, BaseModel
+from storage.db import BaseModel, db_session_scope
 from storage.free_game_subscriber import FreeGameSubscriber
 from storage.free_game import FreeGame
 from storage.game import Game, ReleaseState
@@ -443,8 +443,7 @@ def sort_games_by_score(games: list[Game], member_count: int) -> list[tuple[Game
         # Count the score for this game
         total_score = 0
         if not game.finished:
-            db_session = SessionMaker()
-            try:
+            with db_session_scope() as db_session:
                 votes = (
                     db_session.query(Vote)
                         .filter(Vote.server_id == game.server_id)
@@ -452,8 +451,6 @@ def sort_games_by_score(games: list[Game], member_count: int) -> list[tuple[Game
                         .all()
                 )
                 votes = {vote.user_id: vote.score for vote in votes}
-            finally:
-                db_session.close()
         else:
             votes = game.enjoyment_scores
 
@@ -469,9 +466,7 @@ def sort_games_by_score(games: list[Game], member_count: int) -> list[tuple[Game
 
 
 def get_users_aliases_string(server_id: int, user_ids: list[int]) -> str:
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         # Get each user's alias, falling back to their global name if not set
         users_text = ""
         members = (
@@ -493,9 +488,6 @@ def get_users_aliases_string(server_id: int, user_ids: list[int]) -> str:
         users_text += " ".join(user_aliases)
         users_text += ", ".join(user_names)
         return users_text
-
-    finally:
-        db_session.close()
 
 
 def generate_price_text(game: Game) -> str:
@@ -540,9 +532,7 @@ def get_game_embed_field(game: Game):
 
         description += f"\n> Price: {price_text}"
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         votes = (
             db_session.query(Vote)
                 .filter(Vote.server_id == game.server_id)
@@ -555,9 +545,6 @@ def get_game_embed_field(game: Game):
             description += "\n> Voted: "
             voters_text = get_users_aliases_string(game.server_id, user_ids)
             description += voters_text
-
-    finally:
-        db_session.close()
 
     if game.player_count is not None:
         player_count_text = EMOJIS[f"{game.player_count}players"]
@@ -653,9 +640,7 @@ async def generate_list_embeds(server_id: int) -> Optional[list[discord.Embed]]:
     if guild is None:
         return None
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         games = (
             db_session.query(Game)
                 .filter(Game.server_id == server_id)
@@ -710,18 +695,13 @@ async def generate_list_embeds(server_id: int) -> Optional[list[discord.Embed]]:
         embeds = paginate_embed_description(list_embed)
         return embeds
 
-    finally:
-        db_session.close()
-
 
 def generate_hog_embed(server_id: int):
     guild = get_discord_guild_object(server_id)
     if guild is None:
         return None
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         # Get all finished games
         games = (
             db_session.query(Game)
@@ -761,9 +741,6 @@ def generate_hog_embed(server_id: int):
         )
         return list_embed
 
-    finally:
-        db_session.close()
-
 
 def get_discord_guild_object(server_id: int) -> Optional[discord.Guild]:
     """
@@ -788,9 +765,7 @@ async def get_live_message_object(server_id: int, message_type: LiveMessageType)
     if guild_object is None:
         return None
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         live_message = (
             db_session.query(LiveMessage)
                 .filter(LiveMessage.server_id == server_id)
@@ -806,7 +781,6 @@ async def get_live_message_object(server_id: int, message_type: LiveMessageType)
         if channel_object is None:
             log(f"Discord could not find channel with ID {live_message.channel_id}. It has likely been deleted. Removing child message from the dataset...")
             db_session.delete(live_message)
-            db_session.commit()
             return None
 
         # Get the Discord message object
@@ -815,11 +789,7 @@ async def get_live_message_object(server_id: int, message_type: LiveMessageType)
         except discord.errors.NotFound:
             log(f"Could not find {message_type} with ID {live_message.message_id}. It has likely been deleted. Removing it from the dataset...")
             db_session.delete(live_message)
-            db_session.commit()
             return None
-
-    finally:
-        db_session.close()
 
 
 class PageButtonsView(View):
@@ -912,16 +882,11 @@ async def update_live_messages(server_id: int, skip_hog=False) -> None:
 
 
 async def update_all_lists() -> None:
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         servers = db_session.query(Server).all()    # type: list[Server]
 
         for server in servers:
             await update_list(server.id)
-
-    finally:
-        db_session.close()
 
 
 def get_steam_game_data(steam_game_id: int):
@@ -1026,9 +991,7 @@ def get_steam_game_banner(steam_game_id):
 
 
 async def update_database_steam_prices():
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         games = db_session.query(Game).all()    # type: list[Game]
         for game in games:
             steam_game_info = await get_game_price(game.steam_id)
@@ -1036,11 +999,7 @@ async def update_database_steam_prices():
                 game.price_current = steam_game_info["price_current"]
                 game.price_original = steam_game_info["price_original"]
 
-        db_session.commit()
-        log("Retrieved Steam prices")
-
-    finally:
-        db_session.close()
+    log("Retrieved Steam prices")
 
     await update_all_lists()
 
@@ -1102,9 +1061,7 @@ async def get_free_to_keep_games() -> list[FreeGame]:
         await page.goto(url, timeout=30_000)
         await page.wait_for_selector("div.game-item-v2", timeout=30_000)
 
-        db_session = SessionMaker()
-
-        try:
+        with db_session_scope() as db_session:
             # Empty the free games table
             db_session.query(FreeGame).delete()
 
@@ -1143,23 +1100,16 @@ async def get_free_to_keep_games() -> list[FreeGame]:
                 free_games.append(free_game)
                 db_session.add(free_game)
 
-            db_session.commit()
-
-        finally:
-            db_session.close()
-
         await browser.close()
 
     return free_games
 
 
 async def notify_users_free_to_keep_game(free_game: FreeGame):
-    db_session = SessionMaker()
-    try:
+
+    with db_session_scope() as db_session:
         # Get the users that want to be notified of free games
         subscribed_users = db_session.query(FreeGameSubscriber).all()  # type: list[FreeGameSubscriber]
-    finally:
-        db_session.close()
 
     for subscriber in subscribed_users:
         user = await get_discord_user(subscriber.user_id)
@@ -1178,13 +1128,10 @@ async def check_free_to_keep_games(wait=True):
         await asyncio.sleep(wait_time)
 
     try:
-        db_session = SessionMaker()
-        try:
+        with db_session_scope() as db_session:
             # Get the deals that we've already gotten earlier
             free_games_old = db_session.query(FreeGame).all()   # type: list[FreeGame]
             free_games_old_ids = [free_game.deal_id for free_game in free_games_old]
-        finally:
-            db_session.close()
 
         free_games = await get_free_to_keep_games()
         for free_game in free_games:
@@ -1207,11 +1154,8 @@ def parse_boolean(boolean_string):
 
 
 def load_bedtime_scheduler_jobs():
-    db_session = SessionMaker()
-    try:
+    with db_session_scope() as db_session:
         bedtimes = db_session.query(Bedtime).all()  # type: list[Bedtime]
-    finally:
-        db_session.close()
 
     for bedtime in bedtimes:
         # Re-schedule each bedtime job
@@ -1229,16 +1173,12 @@ def load_bedtime_scheduler_jobs():
 
 
 async def load_views():
-    db_session = SessionMaker()
-    try:
+    with db_session_scope() as db_session:
         list_messages = (
             db_session.query(LiveMessage)
                 .filter(LiveMessage.message_type == LiveMessageType.LIST)
                 .all()
         )   # type: list[LiveMessage]
-
-    finally:
-        db_session.close()
 
     for list_message in list_messages:
         list_message_obj = await get_live_message_object(list_message.server_id, LiveMessageType.LIST)
@@ -1330,9 +1270,7 @@ async def add_game(ctx, game_name):
     except ValueError:
         pass
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         try:
             game = get_game(db_session, server_id, game_name)   # TODO handle case when the game is already finished
             log(f"Game already added: {str(game.name)}")
@@ -1365,10 +1303,6 @@ async def add_game(ctx, game_name):
                 game.price_original = game_price["price_original"]
 
         db_session.add(game)
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1379,17 +1313,11 @@ async def remove_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         # Remove the game from the database
         db_session.delete(game)
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1400,14 +1328,11 @@ async def finish_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         game.finished = True
         game.finished_timestamp = time.time()
-        db_session.commit()
 
         hog_message = await get_live_message_object(server_id, LiveMessageType.HALL_OF_GAME)
         if hog_message:
@@ -1429,9 +1354,6 @@ async def finish_game(ctx, game_name):
         await banner_message.create_thread(name=game.name)
         await hog_channel.create_thread(name=f"{game.name} screenshots", type=discord.ChannelType.public_thread)
 
-    finally:
-        db_session.close()
-
     await update_live_messages(server_id)
     await ctx.message.delete()
 
@@ -1448,16 +1370,9 @@ async def enjoyed(ctx, game_name, score=5.0):
         await ctx.send("Rating must be a number between 0 and 10.")
         return
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name, finished=True)
-
         game.enjoyment_scores[ctx.author.id] = score
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_hall_of_game(server_id)
     await ctx.message.delete()
@@ -1475,9 +1390,7 @@ async def hall_of_game(ctx):
 
     message = await ctx.send(embed=hog_embed)   # type: discord.Message
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         hog_live_message = LiveMessage(
             server_id=server_id,
             channel_id=message.channel.id,
@@ -1485,10 +1398,6 @@ async def hall_of_game(ctx):
             message_type=LiveMessageType.HALL_OF_GAME,
         )
         db_session.add(hog_live_message)
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await ctx.message.delete()
 
@@ -1505,9 +1414,7 @@ async def vote_game(ctx, game_name, score=5.0):
         await ctx.send("Score must be a number between 0 and 10.")
         return
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         vote = db_session.get(Vote, (server_id, game.id, ctx.author.id))    # type: Vote
@@ -1516,10 +1423,6 @@ async def vote_game(ctx, game_name, score=5.0):
             db_session.add(vote)
 
         vote.score = score
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1540,25 +1443,17 @@ async def list_games(ctx):
     if list_message_old is not None:
         await list_message_old.edit(embed=list_embed, view=None)
 
-        db_session = SessionMaker()
-
-        try:
+        with db_session_scope() as db_session:
             # Delete the old list message from the database
             list_live_message_old = db_session.get(LiveMessage, list_message_old.id)    # type: LiveMessage
             if list_live_message_old is not None:
                 db_session.delete(list_live_message_old)
-                db_session.commit()
-
-        finally:
-            db_session.close()
 
     list_message = await ctx.send(embed=list_embed)
     page_buttons_view = PageButtonsView(list_embed.title, list_message.id, update_list, server_id)
     await list_message.edit(embed=list_embed, view=page_buttons_view)
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         list_live_message = LiveMessage(
             server_id=server_id,
             channel_id=list_message.channel.id,
@@ -1566,10 +1461,6 @@ async def list_games(ctx):
             message_type=LiveMessageType.LIST,
         )
         db_session.add(list_live_message)
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await ctx.message.delete()
 
@@ -1579,9 +1470,7 @@ async def play_without(ctx, username):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         user = (
             db_session.query(User)
                 .filter(User.global_name.ilike(username))
@@ -1674,9 +1563,6 @@ async def play_without(ctx, username):
 
         await ctx.send(embed=list_embed)
 
-    finally:
-        db_session.close()
-
     await ctx.message.delete()
 
 
@@ -1685,9 +1571,7 @@ async def display_owned_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         # TODO get member count from database
         members = [member for member in ctx.guild.members if not member.bot]
         member_count = len(members)
@@ -1732,9 +1616,6 @@ async def display_owned_games(ctx):
 
         await ctx.send(embed=list_embed)
 
-    finally:
-        db_session.close()
-
     await ctx.message.delete()
 
 
@@ -1743,16 +1624,11 @@ async def edit(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
-        edit_game = EditGame(game.server_id, game.id, ctx.channel.id)
-        await edit_game.send_message()
-
-    finally:
-        db_session.close()
+    edit_game = EditGame(game.server_id, game.id, ctx.channel.id)
+    await edit_game.send_message()
 
     await ctx.message.delete()
 
@@ -1789,9 +1665,7 @@ class EditGame:
         )  # type: Game
 
     def get_embed(self):
-        db_session = SessionMaker()
-
-        try:
+        with db_session_scope() as db_session:
             game = self.get_game(db_session)
 
             # Get info on the game and display it in an embed
@@ -1801,9 +1675,6 @@ class EditGame:
             game_embed = discord.Embed(title=title, color=EDIT_GAME_EMBED_COLOR)
             game_embed.add_field(**embed_field_info)
             return game_embed
-
-        finally:
-            db_session.close()
 
     async def delete_message(self):
         await self.message_object.delete()
@@ -1822,38 +1693,32 @@ class EditGame:
             self.add_item(Button(style=discord.ButtonStyle.red, label="Close", custom_id="close"))
 
         async def interaction_check(self, interaction: discord.Interaction) -> bool:
-            db_session = SessionMaker()
-
             try:
-                await interaction.response.defer()
+                with db_session_scope() as db_session:
+                    await interaction.response.defer()
 
-                button_id = interaction.data.get("custom_id")
-                game = self.edit_game_object.get_game(db_session)
-                user_id = str(interaction.user.id)
+                    button_id = interaction.data.get("custom_id")
+                    game = self.edit_game_object.get_game(db_session)
+                    user_id = str(interaction.user.id)
 
-                if button_id == "owned":
-                    owned = game.owned.get(user_id, True)
-                    game.owned[user_id] = not owned
-                elif button_id == "played_before":
-                    played_before = game.played_before.get(user_id, True)
-                    game.played_before[user_id] = not played_before
-                elif button_id == "local":
-                    game.local = not game.local
-                elif button_id == "close":
-                    await self.edit_game_object.delete_message()
-                    return True
-                else:
-                    return True
-
-                db_session.commit()
+                    if button_id == "owned":
+                        owned = game.owned.get(user_id, True)
+                        game.owned[user_id] = not owned
+                    elif button_id == "played_before":
+                        played_before = game.played_before.get(user_id, True)
+                        game.played_before[user_id] = not played_before
+                    elif button_id == "local":
+                        game.local = not game.local
+                    elif button_id == "close":
+                        await self.edit_game_object.delete_message()
+                        return True
+                    else:
+                        return True
 
                 await self.edit_game_object.update_message()
 
             except Exception as e:
                 await send_error_message(e)
-
-            finally:
-                db_session.close()
 
             return True
 
@@ -1865,28 +1730,24 @@ class EditGame:
             super().__init__(placeholder="Vote", options=options)
 
         async def callback(self, interaction: discord.Interaction):
-            db_session = SessionMaker()
 
             try:
-                score = int(self.values[0])
-                user_id = interaction.user.id
-                game = self.edit_game_object.get_game(db_session)
+                with db_session_scope() as db_session:
+                    score = int(self.values[0])
+                    user_id = interaction.user.id
+                    game = self.edit_game_object.get_game(db_session)
 
-                vote = db_session.get(Vote, (game.server_id, game.id, user_id))     # type: Vote
-                if vote is None:
-                    vote = Vote(server_id=game.server_id, game_id=game.id, user_id=user_id)
-                    db_session.add(vote)
+                    vote = db_session.get(Vote, (game.server_id, game.id, user_id))     # type: Vote
+                    if vote is None:
+                        vote = Vote(server_id=game.server_id, game_id=game.id, user_id=user_id)
+                        db_session.add(vote)
 
-                vote.score = score
-                db_session.commit()
+                    vote.score = score
 
                 await self.edit_game_object.update_message()
 
             except Exception as e:
                 await send_error_message(e)
-
-            finally:
-                db_session.close()
 
     class PlayersMenu(Select):
         def __init__(self, edit_game_object):
@@ -1896,22 +1757,16 @@ class EditGame:
             super().__init__(placeholder="Player count", options=options)
 
         async def callback(self, interaction: discord.Interaction):
-            db_session = SessionMaker()
-
             try:
-                player_count = int(self.values[0])
-                game = self.edit_game_object.get_game(db_session)
-                game.player_count = player_count
-
-                db_session.commit()
+                with db_session_scope() as db_session:
+                    player_count = int(self.values[0])
+                    game = self.edit_game_object.get_game(db_session)
+                    game.player_count = player_count
 
                 await self.edit_game_object.update_message()
 
             except Exception as e:
                 await send_error_message(e)
-
-            finally:
-                db_session.close()
 
 
 @bot.command(name="tag", help="Adds an informative tag to a game. Example: !tag \"game name\" \"PvP only\".")
@@ -1919,16 +1774,10 @@ async def add_tag(ctx, game_name, tag_text):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         game.tags.append(tag_text)
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1939,9 +1788,7 @@ async def remove_tag(ctx, game_name, tag_text):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         if tag_text not in game.tags:
@@ -1949,10 +1796,6 @@ async def remove_tag(ctx, game_name, tag_text):
             return
 
         game.tags.remove(tag_text)
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1966,18 +1809,12 @@ async def own(ctx, game_name, owns_game="yes"):
 
     owned = parse_boolean(owns_game)
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         game.owned[str(user_id)] = owned
         if not owned:
             game.played_before[str(user_id)] = False
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -1995,16 +1832,10 @@ async def players(ctx, game_name, player_count):
         await ctx.send("Player count must be a number between 1 and 4.")
         return
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         game.player_count = player_count
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2017,16 +1848,10 @@ async def set_local(ctx, game_name, is_local="yes"):
 
     local = parse_boolean(is_local)
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         game.local = local
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2040,16 +1865,10 @@ async def set_played(ctx, game_name, played_before="yes"):
 
     experienced = parse_boolean(played_before)
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         game.played_before[str(user_id)] = experienced
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2067,9 +1886,7 @@ async def set_steam_id(ctx, game_name, steam_id):
         await ctx.send("Steam ID must be a positive number.")
         return
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         # Update the "steam_id" field, retrieve the price again, and save the new game data
@@ -2082,11 +1899,6 @@ async def set_steam_id(ctx, game_name, steam_id):
             game.price_current = steam_game_info["price_current"]
             game.price_original = steam_game_info["price_original"]
 
-        db_session.commit()
-
-    finally:
-        db_session.close()
-
     await update_live_messages(server_id)
     await ctx.message.delete()
 
@@ -2097,16 +1909,10 @@ async def set_alias(ctx, new_alias=None):
     server_id = ctx.guild.id
     user_id = ctx.author.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         server_member = db_session.get(ServerMember, (user_id, server_id))  # type: ServerMember
 
         server_member.alias = new_alias
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2117,16 +1923,10 @@ async def rename_game(ctx, game_name, new_game_name):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
         game.name = new_game_name
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await update_live_messages(server_id)
     await ctx.message.delete()
@@ -2138,9 +1938,7 @@ async def show_affinity(ctx):
     server_id = ctx.guild.id
     user_id = ctx.author.id
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         votes = (
             db_session.query(Vote)
                 .filter(Vote.server_id == server_id)
@@ -2196,9 +1994,6 @@ async def show_affinity(ctx):
             color=AFFINITY_EMBED_COLOR
         )
 
-    finally:
-        db_session.close()
-
     await ctx.send(embed=affinity_embed)
     await ctx.message.delete()
 
@@ -2210,9 +2005,7 @@ async def send_me_free_games(ctx, notify_on_free_game="yes"):
 
     notify = parse_boolean(notify_on_free_game)
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         free_game_subscriber = db_session.get(FreeGameSubscriber, user_id)  # type: FreeGameSubscriber
         if not notify:
             if free_game_subscriber is not None:
@@ -2231,11 +2024,6 @@ async def send_me_free_games(ctx, notify_on_free_game="yes"):
             for free_game in free_games:
                 formatted_message = free_game_to_message_text(free_game)
                 await user.send(formatted_message)
-
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await ctx.message.delete()
 
@@ -2318,9 +2106,7 @@ async def set_bedtime(ctx, bedtime):
         await ctx.send("Invalid time given.")
         return
 
-    db_session = SessionMaker()
-
-    try:
+    with db_session_scope() as db_session:
         bedtime_old = db_session.get(Bedtime, (user_id, server_id))    # type: Bedtime
 
         # First stop any existing bedtimes for this user
@@ -2360,12 +2146,6 @@ async def set_bedtime(ctx, bedtime):
                 scheduler_job_late_id=job_late.id,
             )
             db_session.add(bedtime_new)
-            db_session.commit()
-
-        db_session.commit()
-
-    finally:
-        db_session.close()
 
     await ctx.message.delete()
 
@@ -2657,43 +2437,39 @@ async def update_db_hook(ctx):
     if ctx.guild is None:
         return
 
-    session = SessionMaker()
+    with db_session_scope() as db_session:
+        # Ensure this server is known in the database
+        server_id = ctx.guild.id
+        server = db_session.get(Server, server_id)
+        if server is None:
+            server = Server(id=server_id)
+            db_session.add(server)
 
-    # Ensure this server is known in the database
-    server_id = ctx.guild.id
-    server = session.get(Server, server_id)
-    if server is None:
-        server = Server(id=server_id)
-        session.add(server)
+        # Ensure there is a database entry for this user
+        user_id = ctx.author.id
+        user = db_session.get(User, user_id)
+        if user is None:
+            user = User(
+                id=user_id,
+                username=ctx.author.name,
+                global_name=ctx.author.global_name
+            )
+            db_session.add(user)
+        elif user.username != ctx.author.name or \
+                user.global_name != ctx.author.global_name:
+            # The user has updated their name
+            user.username = ctx.author.name
+            user.global_name = ctx.author.global_name
 
-    # Ensure there is a database entry for this user
-    user_id = ctx.author.id
-    user = session.get(User, user_id)
-    if user is None:
-        user = User(
-            id=user_id,
-            username=ctx.author.name,
-            global_name=ctx.author.global_name
-        )
-        session.add(user)
-    elif user.username != ctx.author.name or \
-            user.global_name != ctx.author.global_name:
-        # The user has updated their name
-        user.username = ctx.author.name
-        user.global_name = ctx.author.global_name
-
-    # Ensure this user has a database entry for this server
-    member = session.get(ServerMember, (user_id, server_id))
-    if not member:
-        # TODO check if it is possible they are a bot
-        member = ServerMember(
-            user_id=user_id,
-            server_id=server_id
-        )
-        session.add(member)
-
-    session.commit()
-    session.close()
+        # Ensure this user has a database entry for this server
+        member = db_session.get(ServerMember, (user_id, server_id))
+        if not member:
+            # TODO check if it is possible they are a bot
+            member = ServerMember(
+                user_id=user_id,
+                server_id=server_id
+            )
+            db_session.add(member)
 
 
 if __name__ == "__main__":
