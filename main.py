@@ -2374,10 +2374,15 @@ async def on_error(event, *args, **kwargs):
         return
     log(f"\nEncountered error in {event}:")
     log(f"args: {args}, kwargs: {kwargs}")
+
+    error_traceback = traceback.format_exc()
+    log(error_traceback)
+
     timestamp = time.time()
     with open("err.log", "a", encoding="utf-8") as f:
-        f.write(f"{timestamp}\n{event}\n{args}\n{kwargs}\n\n")
-    await send_error_message(Exception(f"Encountered error in {event}."))
+        f.write(f"{timestamp}\n{event}\n{args}\n{kwargs}\n{error_traceback}\n\n")
+
+    await send_error_message(error_traceback)
     raise
 
 
