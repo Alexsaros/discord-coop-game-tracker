@@ -17,8 +17,8 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-import storage.models
-from storage.db import BaseModel
+import database.models
+from database.db import BaseModel
 target_metadata = BaseModel.metadata
 # target_metadata = None
 

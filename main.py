@@ -33,16 +33,16 @@ from constants import EMBED_MAX_CHARACTERS, EMBED_DESCRIPTION_MAX_CHARACTERS, EM
 from libraries import codenames
 from logger import log
 from services.free_games import check_free_to_keep_games
-from storage.models.bedtime import Bedtime
-from storage.db import db_session_scope, update_db
-from storage.models.free_game_subscriber import FreeGameSubscriber
-from storage.models.free_game import FreeGame
-from storage.models.game import Game, ReleaseState
-from storage.models.live_message import LiveMessageType, LiveMessage
-from storage.models.server import Server
-from storage.models.server_member import ServerMember
-from storage.models.user import User
-from storage.models.game_user_data import GameUserData
+from database.models.bedtime import Bedtime
+from database.db import db_session_scope, update_db
+from database.models.free_game_subscriber import FreeGameSubscriber
+from database.models.free_game import FreeGame
+from database.models.game import Game, ReleaseState
+from database.models.live_message import LiveMessageType, LiveMessage
+from database.models.server import Server
+from database.models.server_member import ServerMember
+from database.models.user import User
+from database.models.game_user_data import GameUserData
 
 load_dotenv()
 APP_ID = os.getenv("APP_ID")
@@ -51,7 +51,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 GITHUB_WEBHOOK_SECRET_TOKEN = os.getenv("GITHUB_WEBHOOK_SECRET_TOKEN")
 
-DATABASE_FILE = "bot_data.db"
+DATABASE_FILE = "database/bot_data.db"
 BEDTIME_MP3 = "bedtime.mp3"
 BACKUP_DIRECTORY = "backups"
 MAX_BACKUPS = 20

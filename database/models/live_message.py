@@ -2,7 +2,7 @@ import enum
 
 from sqlalchemy import Column, String, Enum, Integer, ForeignKey
 
-from storage.db import BaseModel
+from database.db import BaseModel
 
 
 class LiveMessageType(enum.Enum):

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, ForeignKey, Float, Boolean
 
-from storage.db import BaseModel
+from database.db import BaseModel
 
 
 class GameUserData(BaseModel):

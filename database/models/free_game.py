@@ -3,7 +3,7 @@ import enum
 
 from sqlalchemy import Column, String, DateTime, Enum
 
-from storage.db import BaseModel
+from database.db import BaseModel
 
 
 class GameType(enum.Enum):

@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, ForeignKey
 
-from storage.db import BaseModel
+from database.db import BaseModel
 
 
 class FreeGameSubscriber(BaseModel):

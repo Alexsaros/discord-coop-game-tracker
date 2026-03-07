@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, ForeignKey, Time
 
-from storage.db import BaseModel
+from database.db import BaseModel
 
 
 class Bedtime(BaseModel):

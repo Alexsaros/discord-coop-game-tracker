@@ -5,7 +5,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-engine = create_engine("sqlite:///bot_data.db", echo=False)
+engine = create_engine("sqlite:///database/bot_data.db", echo=False)
 SessionMaker = sessionmaker(bind=engine, expire_on_commit=False)
 BaseModel = declarative_base()
 
@@ -25,5 +25,5 @@ def db_session_scope():
 
 def update_db():
     # Run migrations
-    alembic_cfg = Config("storage/alembic.ini")
+    alembic_cfg = Config("database/alembic.ini")
     command.upgrade(alembic_cfg, "head")

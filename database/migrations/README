@@ -1,4 +1,4 @@
 Generic single-database configuration.
 
 To update the migrations/create a new version, run:
-alembic -c storage/alembic.ini revision --autogenerate -m "message"
+alembic -c database/alembic.ini revision --autogenerate -m "message"

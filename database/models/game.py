@@ -3,7 +3,7 @@ import enum
 from sqlalchemy import Column, Integer, String, Boolean, JSON, Float, Enum, ForeignKey
 from sqlalchemy.ext.mutable import MutableList
 
-from storage.db import BaseModel
+from database.db import BaseModel
 
 
 class ReleaseState(enum.Enum):

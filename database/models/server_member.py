@@ -1,8 +1,8 @@
 from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
 
-from storage.db import BaseModel
-from storage.models.user import User
+from database.db import BaseModel
+from database.models.user import User
 
 
 class ServerMember(BaseModel):
