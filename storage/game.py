@@ -1,7 +1,7 @@
 import enum
 
 from sqlalchemy import Column, Integer, String, Boolean, JSON, Float, Enum, ForeignKey
-from sqlalchemy.ext.mutable import MutableDict, MutableList
+from sqlalchemy.ext.mutable import MutableList
 
 from storage.db import BaseModel
 
@@ -20,10 +20,7 @@ class Game(BaseModel):
     name = Column(String, nullable=False)
     submitter = Column(String, nullable=False)
 
-    # TODO change JSON fields to database entries
     tags = Column(MutableList.as_mutable(JSON), default=list)
-    owned = Column(MutableDict.as_mutable(JSON), default=dict)
-    played_before = Column(MutableDict.as_mutable(JSON), default=dict)
 
     player_count = Column(Integer)
     steam_id = Column(Integer)
@@ -34,4 +31,3 @@ class Game(BaseModel):
 
     finished = Column(Boolean, default=False)
     finished_timestamp = Column(Float)
-    enjoyment_scores = Column(MutableDict.as_mutable(JSON), default=dict)

@@ -43,7 +43,7 @@ from storage.live_message import LiveMessageType, LiveMessage
 from storage.server import Server
 from storage.server_member import ServerMember
 from storage.user import User
-from storage.vote import Vote
+from storage.game_user_data import GameUserData
 
 load_dotenv()
 APP_ID = os.getenv("APP_ID")
@@ -379,24 +379,23 @@ def sort_games_by_score(games: list[Game], member_count: int) -> list[tuple[Game
 
     for game in games:
         # Count the score for this game
-        total_score = 0
-        if not game.finished:
-            with db_session_scope() as db_session:
-                votes = (
-                    db_session.query(Vote)
-                        .filter(Vote.server_id == game.server_id)
-                        .filter(Vote.game_id == game.id)
-                        .all()
-                )
-                votes = {vote.user_id: vote.score for vote in votes}
-        else:
-            votes = game.enjoyment_scores
+        with db_session_scope() as db_session:
+            game_user_data_list = (
+                db_session.query(GameUserData)
+                    .filter(GameUserData.server_id == game.server_id)
+                    .filter(GameUserData.game_id == game.id)
+                    .all()
+            )   # type: list[GameUserData]
 
-        for _, score in votes.items():
-            total_score += score
+            if not game.finished:
+                votes = [data.vote for data in game_user_data_list]
+            else:
+                votes = [data.enjoyment_score for data in game_user_data_list]
+
+        total_score = sum(votes)
         # Use a score of 5 for the non-voters
-        non_voters = member_count - len(votes)
-        total_score += non_voters * 5
+        non_voter_count = member_count - len(votes)
+        total_score += non_voter_count * 5
 
         game_scores.append((game, total_score))
 
@@ -471,43 +470,44 @@ def get_game_embed_field(game: Game):
         description += f"\n> Price: {price_text}"
 
     with db_session_scope() as db_session:
-        votes = (
-            db_session.query(Vote)
-                .filter(Vote.server_id == game.server_id)
-                .filter(Vote.game_id == game.id)
+        game_user_data_list = (
+            db_session.query(GameUserData)
+                .filter(GameUserData.server_id == game.server_id)
+                .filter(GameUserData.game_id == game.id)
                 .all()
-        )   # type: list[Vote]
+        )   # type: list[GameUserData]
 
-        if votes:
-            user_ids = [vote.user_id for vote in votes]
-            description += "\n> Voted: "
-            voters_text = get_users_aliases_string(game.server_id, user_ids)
-            description += voters_text
+    voted_user_ids = [data.user_id for data in game_user_data_list if data.vote is not None]
+    if voted_user_ids:
+        description += "\n> Voted: "
+        voters_text = get_users_aliases_string(game.server_id, voted_user_ids)
+        description += voters_text
 
     if game.player_count is not None:
         player_count_text = EMOJIS[f"{game.player_count}players"]
         description += f"\n> Players: {player_count_text}"
 
     # Do not display who owns a game if the game is free, as you can't buy a free game
-    people_bought_game = (game.owned and game.price_original is not None)
-    if people_bought_game or game.local:
+    owned_user_data_list = [data for data in game_user_data_list if data.owned is not None]
+    if (owned_user_data_list or game.local) and game.price_original != 0:
         description += "\n> Owned: "
 
-        if people_bought_game:
+        if owned_user_data_list:
             # Sums the True/False values, with them corresponding to 1/0
-            owned_count = sum(owned for owned in game.owned.values())
+            owned_count = sum(data.owned for data in owned_user_data_list)
             description += EMOJIS["owned"] * owned_count
-            description += EMOJIS["not_owned"] * (len(game.owned) - owned_count)
+            description += EMOJIS["not_owned"] * (len(owned_user_data_list) - owned_count)
 
         if game.local:
             description += "(" + EMOJIS["local"] + ")"
 
-    if game.played_before:
+    played_before_user_data_list = [data for data in game_user_data_list if data.played_before is not None]
+    if played_before_user_data_list:
         description += "\n> Experience: "
         # Sums the True/False values, with them corresponding to 1/0
-        played_before_count = sum(played for played in game.played_before.values())
+        played_before_count = sum(data.played_before for data in played_before_user_data_list)
         description += EMOJIS["experienced"] * played_before_count
-        description += EMOJIS["new"] * (len(game.played_before) - played_before_count)
+        description += EMOJIS["new"] * (len(played_before_user_data_list) - played_before_count)
 
     tags = game.tags
     if len(tags) > 0:
@@ -596,9 +596,10 @@ async def generate_list_embeds(server_id: int) -> Optional[list[discord.Embed]]:
             non_voters_ids = [member.id for member in members]
 
             voters_ids = (
-                db_session.query(Vote.user_id)
-                    .filter(Vote.server_id == server_id)
-                    .filter(Vote.game_id == game.id)
+                db_session.query(GameUserData.user_id)
+                    .filter(GameUserData.server_id == server_id)
+                    .filter(GameUserData.game_id == game.id)
+                    .filter(GameUserData.vote.isnot(None))
                     .all()
             )  # type: list[tuple[int]]
             voters_ids = [voter_id[0] for voter_id in voters_ids]   # type: list[int]
@@ -1212,6 +1213,7 @@ async def finish_game(ctx, game_name):
 async def enjoyed(ctx, game_name, score=5.0):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
+    user_id = ctx.author.id
 
     try:
         score = float(score)
@@ -1222,7 +1224,12 @@ async def enjoyed(ctx, game_name, score=5.0):
 
     with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name, finished=True)
-        game.enjoyment_scores[ctx.author.id] = score
+        game_user_data = db_session.get(GameUserData, (server_id, game.id, user_id))    # type: GameUserData
+        if game_user_data is None:
+            game_user_data = GameUserData(server_id=server_id, game_id=game.id, user_id=user_id)
+            db_session.add(game_user_data)
+
+        game_user_data.enjoyment_score = score
 
     await update_hall_of_game(server_id)
     try:
@@ -1262,6 +1269,7 @@ async def hall_of_game(ctx):
 async def vote_game(ctx, game_name, score=5.0):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
+    user_id = ctx.author.id
 
     try:
         score = float(score)
@@ -1272,13 +1280,12 @@ async def vote_game(ctx, game_name, score=5.0):
 
     with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
+        game_user_data = db_session.get(GameUserData, (server_id, game.id, user_id))  # type: GameUserData
+        if game_user_data is None:
+            game_user_data = GameUserData(server_id=server_id, game_id=game.id, user_id=user_id)
+            db_session.add(game_user_data)
 
-        vote = db_session.get(Vote, (server_id, game.id, ctx.author.id))    # type: Vote
-        if vote is None:
-            vote = Vote(server_id=server_id, game_id=game.id, user_id=ctx.author.id)
-            db_session.add(vote)
-
-        vote.score = score
+        game_user_data.vote = score
 
     await update_live_messages(server_id)
     try:
@@ -1355,27 +1362,28 @@ async def play_without(ctx, username):
         )   # type: list[Game]
 
         for game in games:
-            votes = (
-                db_session.query(Vote)
-                    .filter(Vote.server_id == server_id)
-                    .filter(Vote.game_id == game.id)
+            game_user_data_votes = (
+                db_session.query(GameUserData)
+                    .filter(GameUserData.server_id == server_id)
+                    .filter(GameUserData.game_id == game.id)
+                    .filter(GameUserData.vote.isnot(None))
                     .all()
-            )  # type: list[Vote]
+            )  # type: list[GameUserData]
 
             # Skip games that the user voted 5 or higher on
-            vote_user = next((vote.score for vote in votes if vote.user_id == user.id), 5)
+            vote_user = next((data.vote for data in game_user_data_votes if data.user_id == user.id), 5)
             if vote_user >= 5:
                 continue
 
             # Count the score for this game
             total_score = 0
-            for vote in votes:
-                if vote.user_id != user.id:
-                    total_score += vote.score
+            for data in game_user_data_votes:
+                if data.user_id != user.id:
+                    total_score += data.vote
                 else:
-                    total_score -= vote.score * member_count
+                    total_score -= data.vote * member_count
             # Use a score of 5 for the non-voters
-            non_voters_ids = member_count - len(votes)
+            non_voters_ids = member_count - len(game_user_data_votes)
             total_score += non_voters_ids * 5
 
             game_scores.append((game, total_score))
@@ -1384,18 +1392,19 @@ async def play_without(ctx, username):
 
         games_list = []     # type: list[str]
         for game, score in sorted_games:
-            votes = (
-                db_session.query(Vote)
-                    .filter(Vote.server_id == server_id)
-                    .filter(Vote.game_id == game.id)
+            game_user_data_votes = (
+                db_session.query(GameUserData)
+                    .filter(GameUserData.server_id == server_id)
+                    .filter(GameUserData.game_id == game.id)
+                    .filter(GameUserData.vote.isnot(None))
                     .all()
-            )  # type: list[Vote]
+            )  # type: list[GameUserData]
 
             # Get everyone who hasn't voted yet
             non_voters_ids = [member.id for member in members]
-            for vote in votes:
-                if vote.user_id in non_voters_ids:
-                    non_voters_ids.remove(vote.user_id)
+            for data in game_user_data_votes:
+                if data.user_id in non_voters_ids:
+                    non_voters_ids.remove(data.user_id)
             non_voters_text = get_users_aliases_string(server_id, non_voters_ids)
 
             game_text = f"{game.id} -"
@@ -1450,7 +1459,15 @@ async def display_owned_games(ctx):
 
         owned_games = []    # type: list[Game]
         for game in games:
-            owned_count = sum(1 for owned in game.owned.values() if owned is True)
+            game_user_data_list = (
+                db_session.query(GameUserData)
+                    .filter(GameUserData.server_id == game.server_id)
+                    .filter(GameUserData.game_id == game.id)
+                    .all()
+            )   # type: list[GameUserData]
+
+            # Sums the True/False values, with them corresponding to 1/0
+            owned_count = sum(data.owned for data in game_user_data_list)
             if owned_count >= member_count:
                 owned_games.append(game)
 
@@ -1568,16 +1585,20 @@ class EditGame:
                 with db_session_scope() as db_session:
                     await interaction.response.defer()
 
+                    user_id = interaction.user.id
                     button_id = interaction.data.get("custom_id")
                     game = self.edit_game_object.get_game(db_session)
-                    user_id = str(interaction.user.id)
+                    game_user_data = db_session.get(GameUserData, (game.server_id, game.id, user_id))  # type: GameUserData
+                    if game_user_data is None:
+                        game_user_data = GameUserData(server_id=game.server_id, game_id=game.id, user_id=user_id)
+                        db_session.add(game_user_data)
 
                     if button_id == "owned":
-                        owned = game.owned.get(user_id, True)
-                        game.owned[user_id] = not owned
+                        owned = game_user_data.owned if game_user_data.owned is not None else False
+                        game_user_data.owned = not owned
                     elif button_id == "played_before":
-                        played_before = game.played_before.get(user_id, True)
-                        game.played_before[user_id] = not played_before
+                        played_before = game_user_data.played_before if game_user_data.played_before is not None else False
+                        game_user_data.played_before = not played_before
                     elif button_id == "local":
                         game.local = not game.local
                     elif button_id == "close":
@@ -1608,12 +1629,12 @@ class EditGame:
                     user_id = interaction.user.id
                     game = self.edit_game_object.get_game(db_session)
 
-                    vote = db_session.get(Vote, (game.server_id, game.id, user_id))     # type: Vote
-                    if vote is None:
-                        vote = Vote(server_id=game.server_id, game_id=game.id, user_id=user_id)
-                        db_session.add(vote)
+                    game_user_data = db_session.get(GameUserData, (game.server_id, game.id, user_id))   # type: GameUserData
+                    if game_user_data is None:
+                        game_user_data = GameUserData(server_id=game.server_id, game_id=game.id, user_id=user_id)
+                        db_session.add(game_user_data)
 
-                    vote.score = score
+                    game_user_data.vote = score
 
                 await self.edit_game_object.update_message()
 
@@ -1688,10 +1709,14 @@ async def own(ctx, game_name, owns_game="yes"):
 
     with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
+        game_user_data = db_session.get(GameUserData, (server_id, game.id, user_id))  # type: GameUserData
+        if game_user_data is None:
+            game_user_data = GameUserData(server_id=server_id, game_id=game.id, user_id=user_id)
+            db_session.add(game_user_data)
 
-        game.owned[str(user_id)] = owned
+        game_user_data.owned = owned
         if not owned:
-            game.played_before[str(user_id)] = False
+            game_user_data.played_before = False
 
     await update_live_messages(server_id)
     try:
@@ -1753,8 +1778,12 @@ async def set_played(ctx, game_name, played_before="yes"):
 
     with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
+        game_user_data = db_session.get(GameUserData, (server_id, game.id, user_id))    # type: GameUserData
+        if game_user_data is None:
+            game_user_data = GameUserData(server_id=server_id, game_id=game.id, user_id=user_id)
+            db_session.add(game_user_data)
 
-        game.played_before[str(user_id)] = experienced
+        game_user_data.played_before = experienced
 
     await update_live_messages(server_id)
     try:
@@ -1837,30 +1866,31 @@ async def show_affinity(ctx):
     user_id = ctx.author.id
 
     with db_session_scope() as db_session:
-        votes = (
-            db_session.query(Vote)
-                .filter(Vote.server_id == server_id)
+        game_user_data_votes = (
+            db_session.query(GameUserData)
+                .filter(GameUserData.server_id == server_id)
+                .filter(GameUserData.vote.isnot(None))
                 .all()
-        )   # type: list[Vote]
+        )   # type: list[GameUserData]
 
-        votes_by_game = defaultdict(list)   # type: dict[int, list[Vote]]
-        for vote in votes:
-            votes_by_game[vote.game_id].append(vote)
+        vote_data_by_game = defaultdict(list)   # type: dict[int, list[GameUserData]]
+        for data in game_user_data_votes:
+            vote_data_by_game[data.game_id].append(data)
 
         similarity_scores = defaultdict(lambda: defaultdict(int))   # type: dict[int, dict[str, int]]
-        for game_id, game_votes in votes_by_game.items():
+        for game_id, game_vote_data in vote_data_by_game.items():
             # Skip this game if the user hasn't voted on it
-            vote_user = next((vote for vote in game_votes if vote.user_id == user_id), None)
-            if vote_user is None:
+            user_data = next((data for data in game_vote_data if data.user_id == user_id), None)
+            if user_data is None:
                 continue
 
             # Check the votes for this game
-            for vote in game_votes:
-                if vote.user_id == user_id:
+            for data in game_vote_data:
+                if data.user_id == user_id:
                     continue
 
-                similarity_scores[vote.user_id]["error_sum"] += abs(vote_user.score - vote)
-                similarity_scores[vote.user_id]["votes"] += 1
+                similarity_scores[data.user_id]["error_sum"] += abs(user_data.vote - data)
+                similarity_scores[data.user_id]["votes"] += 1
 
         similarity_percentages = []
         for user, stats in similarity_scores.items():
