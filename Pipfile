@@ -13,6 +13,7 @@ PyNaCl = "*"
 python-dateutil = "*"
 pillow = "*"
 sqlalchemy = "*"
+alembic = "*"
 
 [requires]
 python_version = "3.*"

@@ -1,4 +1,7 @@
 from contextlib import contextmanager
+
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
@@ -18,3 +21,9 @@ def db_session_scope():
         raise
     finally:
         session.close()
+
+
+def update_db():
+    # Run migrations
+    alembic_cfg = Config("storage/alembic.ini")
+    command.upgrade(alembic_cfg, "head")

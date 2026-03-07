@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from dateutil import parser
 from logger import send_error_message
 from storage.db import db_session_scope
-from storage.free_game import FreeGame, GameType
+from storage.models.free_game import FreeGame, GameType
 
 load_dotenv()
 

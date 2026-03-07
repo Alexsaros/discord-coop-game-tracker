@@ -5,8 +5,8 @@ from apis.discord import get_discord_user
 from apis.free_games import get_free_to_keep_games
 from logger import send_error_message
 from storage.db import db_session_scope
-from storage.free_game import FreeGame
-from storage.free_game_subscriber import FreeGameSubscriber
+from storage.models.free_game import FreeGame
+from storage.models.free_game_subscriber import FreeGameSubscriber
 
 
 async def check_free_to_keep_games(bot: Bot):

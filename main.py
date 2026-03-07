@@ -33,17 +33,16 @@ from constants import EMBED_MAX_CHARACTERS, EMBED_DESCRIPTION_MAX_CHARACTERS, EM
 from libraries import codenames
 from logger import log
 from services.free_games import check_free_to_keep_games
-from storage import db
-from storage.bedtime import Bedtime
-from storage.db import BaseModel, db_session_scope
-from storage.free_game_subscriber import FreeGameSubscriber
-from storage.free_game import FreeGame
-from storage.game import Game, ReleaseState
-from storage.live_message import LiveMessageType, LiveMessage
-from storage.server import Server
-from storage.server_member import ServerMember
-from storage.user import User
-from storage.game_user_data import GameUserData
+from storage.models.bedtime import Bedtime
+from storage.db import db_session_scope, update_db
+from storage.models.free_game_subscriber import FreeGameSubscriber
+from storage.models.free_game import FreeGame
+from storage.models.game import Game, ReleaseState
+from storage.models.live_message import LiveMessageType, LiveMessage
+from storage.models.server import Server
+from storage.models.server_member import ServerMember
+from storage.models.user import User
+from storage.models.game_user_data import GameUserData
 
 load_dotenv()
 APP_ID = os.getenv("APP_ID")
@@ -2431,8 +2430,7 @@ if __name__ == "__main__":
     updater_thread = threading.Thread(target=bot_updater.run, kwargs={"host": "127.0.0.1", "port": 5500})
     updater_thread.start()
 
-    # Create any new tables
-    BaseModel.metadata.create_all(db.engine)
+    update_db()
 
     # Allows for running multiple threads if needed in the future
     loop = asyncio.new_event_loop()

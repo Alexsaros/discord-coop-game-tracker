@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
 
 from storage.db import BaseModel
-from storage.user import User
+from storage.models.user import User
 
 
 class ServerMember(BaseModel):
