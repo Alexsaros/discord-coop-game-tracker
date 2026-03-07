@@ -21,15 +21,18 @@ from dotenv import load_dotenv
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from dateutil import parser
 import random
 import hmac
 import hashlib
-from playwright.async_api import async_playwright
 
 from sqlalchemy.orm import joinedload, Session
 
+import logger
+from apis.discord import get_discord_user
+from constants import EMBED_MAX_CHARACTERS, EMBED_DESCRIPTION_MAX_CHARACTERS, EMBED_MAX_FIELDS
 from libraries import codenames
+from logger import log
+from services.free_games import check_free_to_keep_games
 from storage import db
 from storage.bedtime import Bedtime
 from storage.db import BaseModel, db_session_scope
@@ -48,11 +51,6 @@ PUBLIC_KEY = os.getenv("PUBLIC_KEY")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 GITHUB_WEBHOOK_SECRET_TOKEN = os.getenv("GITHUB_WEBHOOK_SECRET_TOKEN")
-DEVELOPER_USER_ID = os.getenv("DEVELOPER_USER_ID")
-
-ITAD_CLIENT_ID = os.getenv("ITAD_CLIENT_ID")
-ITAD_CLIENT_SECRET = os.getenv("ITAD_CLIENT_SECRET")
-ITAD_API_KEY = os.getenv("ITAD_API_KEY")
 
 DATABASE_FILE = "bot_data.db"
 BEDTIME_MP3 = "bedtime.mp3"
@@ -60,10 +58,6 @@ BACKUP_DIRECTORY = "backups"
 MAX_BACKUPS = 20
 
 BEDTIME_LATE_INTERVAL_MINUTES = 15
-EMBED_MAX_FIELDS = 25
-EMBED_MAX_CHARACTERS = 6000
-EMBED_DESCRIPTION_MAX_CHARACTERS = 4096
-MESSAGE_MAX_CHARACTERS = 2000
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 LIST_EMBED_COLOR = discord.Color.blurple()
 AFFINITY_EMBED_COLOR = discord.Color.purple()
@@ -310,67 +304,8 @@ scheduler = AsyncIOScheduler(
 )
 
 
-async def get_discord_user(user_id: int) -> discord.User:
-    user = bot.get_user(user_id)
-    if user is None:
-        user = await bot.fetch_user(user_id)
-    return user
-
-
-def log(message):
-    message = str(message)
-    print(message)
-    with open("log.log", "a", encoding="utf-8") as f:
-        f.write(message + "\n")
-
-
 async def send_error_message(exception):
-    if isinstance(exception, Exception):
-        message = ''.join(traceback.format_exception(exception))
-        log(message)
-    else:
-        message = str(exception)
-    developer = await get_discord_user(int(DEVELOPER_USER_ID))
-    for i in range(0, len(message), MESSAGE_MAX_CHARACTERS - 6):
-        message_slice = message[i:i + MESSAGE_MAX_CHARACTERS - 6]
-        await developer.send(f"```{message_slice}```")
-
-
-def free_game_to_message_text(free_game: FreeGame):
-    """
-    Formats the free game into a message announcing it, including a hyperlink.
-
-    :return: a string describing that this game is free, for how long, and where to get it.
-    """
-    # Calculate how much time is left for this deal and add it to a presentable string
-    expiry_string = ""
-    if free_game.expiry_datetime:
-        expiry_datetime_object = parser.isoparse(free_game.expiry_datetime)
-        formatted_time = expiry_datetime_object.strftime("%Y-%m-%d %H:%M")
-        expiry_string += formatted_time
-        time_until_expiry = expiry_datetime_object - datetime.datetime.now(expiry_datetime_object.tzinfo)
-        days_until_expiry = time_until_expiry.days
-        expiry_string += " ("
-        if days_until_expiry > 0:
-            expiry_string += f"{days_until_expiry} day"
-            if days_until_expiry != 1:
-                expiry_string += "s"
-            expiry_string += " and "
-        hours_until_expiry = int(time_until_expiry.seconds / 3600)
-        expiry_string += f"{hours_until_expiry} hour"
-        if hours_until_expiry != 1:
-            expiry_string += "s"
-        expiry_string += " left)"
-
-    # Set up the the message
-    message_text = f"**{free_game.game_name}**"
-    if free_game.type and free_game.type != "game":
-        message_text += f" (*{free_game.type.upper()}*)"
-    message_text += f" is free to keep on [{free_game.shop_name}](<{free_game.url}>)"
-    if expiry_string:
-        message_text += f" until {expiry_string}"
-    message_text += "."
-    return message_text
+    await logger.send_error_message(bot, exception)
 
 
 def create_backup(file_to_backup=DATABASE_FILE):
@@ -1046,106 +981,6 @@ def search_steam_for_game(game_name):
     return game_match
 
 
-async def get_free_to_keep_games() -> list[FreeGame]:
-    # URL for free deals on GG.deals
-    url = "https://gg.deals/deals/pc/?minDiscount=100"
-    free_games = {}
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            )
-        )
-
-        await page.goto(url, timeout=30_000)
-        await page.wait_for_selector("div.game-item-v2", timeout=30_000)
-
-        with db_session_scope() as db_session:
-            # Empty the free games table
-            db_session.query(FreeGame).delete()
-
-            game_elements = await page.query_selector_all("div.game-item-v2")
-            for g in game_elements:
-                title_el = await g.query_selector("a.game-info-title")
-                if not title_el:
-                    continue
-                game_name = (await title_el.inner_text()).strip()
-
-                shop_name = await g.get_attribute("data-shop-name") or ""
-
-                time_el = await g.query_selector("time.timesince")
-                deal_end_time = await time_el.get_attribute("datetime") if time_el else ""
-
-                shop_link_el = await g.query_selector("a.shop-link")
-                if shop_link_el:
-                    relative = await shop_link_el.get_attribute("href") or ""
-                    shop_link = "https://gg.deals" + relative
-                else:
-                    shop_link = ""
-
-                deal_path = await title_el.get_attribute("href") or ""
-                parts = [seg for seg in deal_path.split("/") if seg]
-                deal_type = parts[0] if parts else ""
-
-                free_game = FreeGame(
-                    deal_id=deal_path,
-                    game_name=game_name,
-                    shop_name=shop_name,
-                    expiry_datetime=deal_end_time,
-                    url=shop_link,
-                    type=deal_type,
-                )
-
-                free_games.append(free_game)
-                db_session.add(free_game)
-
-        await browser.close()
-
-    return free_games
-
-
-async def notify_users_free_to_keep_game(free_game: FreeGame):
-
-    with db_session_scope() as db_session:
-        # Get the users that want to be notified of free games
-        subscribed_users = db_session.query(FreeGameSubscriber).all()  # type: list[FreeGameSubscriber]
-
-    for subscriber in subscribed_users:
-        user = await get_discord_user(subscriber.user_id)
-        formatted_message = free_game.to_message_text()
-        try:
-            await user.send(formatted_message)
-        except discord.Forbidden:
-            # User has disabled DMs from the bot
-            pass
-
-
-async def check_free_to_keep_games(wait=True):
-    # Potentially wait up to 1 hour before scraping, to simulate human randomness
-    if wait:
-        wait_time = random.randint(0, 3600)
-        await asyncio.sleep(wait_time)
-
-    try:
-        with db_session_scope() as db_session:
-            # Get the deals that we've already gotten earlier
-            free_games_old = db_session.query(FreeGame).all()   # type: list[FreeGame]
-            free_games_old_ids = [free_game.deal_id for free_game in free_games_old]
-
-        free_games = await get_free_to_keep_games()
-        for free_game in free_games:
-            # If this deal is new, send a message to users who want to be notified
-            if free_game.deal_id not in free_games_old_ids:
-                await notify_users_free_to_keep_game(free_game)
-
-    except Exception as e:
-        await send_error_message(e)
-
-
 def parse_boolean(boolean_string):
     boolean_string_lower = boolean_string.lower()
     if boolean_string_lower[:1] in ["y", "t"]:
@@ -1212,12 +1047,12 @@ async def on_ready():
     # Checks Steam and displays the updated prices
     await update_database_steam_prices()
     # Check any free-to-keep games
-    await check_free_to_keep_games(wait=False)
+    await check_free_to_keep_games(bot)
 
     # Create a job to update the prices every 6 hours
     scheduler.add_job(update_database_steam_prices, CronTrigger(hour="0,6,12,18"))
     # Create a job to check for new free-to-keep games every 6 hours
-    scheduler.add_job(check_free_to_keep_games, CronTrigger(hour="7,19"))
+    scheduler.add_job(check_free_to_keep_games, CronTrigger(hour="7,19"), args=[bot])
     # Create a job that makes a backup of the dataset every 12 hours
     scheduler.add_job(create_backup, CronTrigger(hour="2,14"))
     # Create a job that removes old Codenames games every day
@@ -1874,7 +1709,10 @@ async def set_played(ctx, game_name, played_before="yes"):
         game.played_before[str(user_id)] = experienced
 
     await update_live_messages(server_id)
-    await ctx.message.delete()
+    try:
+        await ctx.message.delete()
+    except discord.Forbidden:
+        pass
 
 
 @bot.command(name="steam_id", help="Links a game to a steam ID for the purpose of retrieving prices. Example: !steam_id \"game name\" 105600.")
@@ -2014,18 +1852,19 @@ async def send_me_free_games(ctx, notify_on_free_game="yes"):
             if free_game_subscriber is not None:
                 db_session.delete(free_game_subscriber)
         else:
-            free_game_subscriber = FreeGameSubscriber(
-                user_id=user_id,
-            )
-            db_session.add(free_game_subscriber)
+            if free_game_subscriber is None:
+                free_game_subscriber = FreeGameSubscriber(
+                    user_id=user_id,
+                )
+                db_session.add(free_game_subscriber)
 
             # Notify the interested user about all of the currently active deals
-            user = await get_discord_user(user_id)
+            user = await get_discord_user(bot, user_id)
             await user.send("From now on, I will send you a message whenever a game becomes free to keep.")
 
             free_games = db_session.query(FreeGame).all()   # type: list[FreeGame]
             for free_game in free_games:
-                formatted_message = free_game_to_message_text(free_game)
+                formatted_message = free_game.to_markdown()
                 await user.send(formatted_message)
 
     await ctx.message.delete()

@@ -1,0 +1,12 @@
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+DEVELOPER_USER_ID = int(os.getenv("DEVELOPER_USER_ID"))
+
+EMBED_MAX_FIELDS = 25
+EMBED_MAX_CHARACTERS = 6000
+EMBED_DESCRIPTION_MAX_CHARACTERS = 4096
+MESSAGE_MAX_CHARACTERS = 2000

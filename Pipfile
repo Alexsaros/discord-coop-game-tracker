@@ -12,7 +12,6 @@ flask = "*"
 PyNaCl = "*"
 python-dateutil = "*"
 pillow = "*"
-playwright = "*"
 sqlalchemy = "*"
 
 [requires]
