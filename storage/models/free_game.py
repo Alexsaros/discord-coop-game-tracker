@@ -30,7 +30,8 @@ class FreeGame(BaseModel):
         """
         # Calculate how much time is left for this deal and add it to a presentable string
         expiry_string = ""
-        formatted_time = self.expiry_datetime.strftime("%Y-%m-%d %H:%M")
+        timestamp = int(self.expiry_datetime.timestamp())
+        formatted_time = f"<t:{timestamp}:f>"
         expiry_string += formatted_time
         time_until_expiry = self.expiry_datetime - datetime.datetime.now(self.expiry_datetime.tzinfo)
         days_until_expiry = time_until_expiry.days
