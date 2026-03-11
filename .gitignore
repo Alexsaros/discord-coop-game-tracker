@@ -6,3 +6,4 @@ err.log
 log.log
 dataset.json
 backups
+database/*.db

@@ -7,19 +7,14 @@ from typing import Optional
 import discord
 import asyncio
 import time
-import requests
-import re
 import datetime
 import subprocess
 import flask
 import shutil
-from io import BytesIO
 from discord.ext import commands
 from discord.ext.commands import CommandInvokeError
 from discord.ui import View, Button, Select
 from dotenv import load_dotenv
-from apscheduler.jobstores.base import JobLookupError
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 import random
 import hmac
@@ -27,22 +22,28 @@ import hashlib
 
 from sqlalchemy.orm import joinedload, Session
 
-import logger
-from apis.discord import get_discord_user
+from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam_for_game, update_database_steam_prices
+from services.bedtime import load_bedtime_scheduler_jobs
+from shared import logger
+from apis.discord import get_discord_guild_object
 from constants import EMBED_MAX_CHARACTERS, EMBED_DESCRIPTION_MAX_CHARACTERS, EMBED_MAX_FIELDS
 from libraries import codenames
-from logger import log
-from services.free_games import check_free_to_keep_games
-from database.models.bedtime import Bedtime
+from shared.exceptions import BotException, GameNotFoundException
+from shared.logger import log
+from services import dice_roller, bedtime
+from services.eight_ball import use_eight_ball
+from services.free_games import check_free_to_keep_games, set_user_free_game_notifications
 from database.db import db_session_scope, update_db
-from database.models.free_game_subscriber import FreeGameSubscriber
-from database.models.free_game import FreeGame
 from database.models.game import Game, ReleaseState
 from database.models.live_message import LiveMessageType, LiveMessage
 from database.models.server import Server
 from database.models.server_member import ServerMember
 from database.models.user import User
 from database.models.game_user_data import GameUserData
+from services.horoscope import create_horoscope_embed
+from services.tarot.tarot import create_random_tarot_embed
+from shared.scheduler import get_scheduler
+from shared.utils import parse_boolean
 
 load_dotenv()
 APP_ID = os.getenv("APP_ID")
@@ -52,16 +53,12 @@ STEAM_API_KEY = os.getenv("STEAM_API_KEY")
 GITHUB_WEBHOOK_SECRET_TOKEN = os.getenv("GITHUB_WEBHOOK_SECRET_TOKEN")
 
 DATABASE_FILE = "database/bot_data.db"
-BEDTIME_MP3 = "bedtime.mp3"
 BACKUP_DIRECTORY = "backups"
 MAX_BACKUPS = 20
 
-BEDTIME_LATE_INTERVAL_MINUTES = 15
 EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 LIST_EMBED_COLOR = discord.Color.blurple()
 AFFINITY_EMBED_COLOR = discord.Color.purple()
-TAROT_EMBED_COLOR = discord.Color.gold()
-HOROSCOPE_EMBED_COLOR = discord.Color.magenta()
 LIST_PLAY_WITHOUT_EMBED_COLOR = discord.Color.red()
 LIST_OWNED_GAMES_EMBED_COLOR = discord.Color.orange()
 
@@ -76,141 +73,6 @@ EMOJIS = {
     "local": ":satellite:",
     "experienced": ":brain:",
     "new": ":new:",
-}
-
-TAROT_CARDS = {
-    "0": {
-        "number": 0,
-        "name": "The Fool",
-        "meaning_upright": "It’s time for a new adventure, but there is a level of risk. Consider your options carefully, and when you are sure, take that leap of faith.",
-        "meaning_reversed": " Beware false promises and naïveté. Don’t lose touch with reality.",
-    },
-    "1": {
-        "number": 1,
-        "name": "The Magician",
-        "meaning_upright": "It’s time for action - your travel plans, business and creative projects are blessed. You have the energy and wisdom you need to make it happen now. Others see your talent.",
-        "meaning_reversed": "False appearances. A scheme or project you’re involved in doesn’t ring true. A further meaning is a creative block, and travel plans being put on hold.",
-    },
-    "2": {
-        "number": 2,
-        "name": "The High Priestess",
-        "meaning_upright": "Your dreams and your intuition provide the answers you need. This is a psychic card, revealing that truth comes from unconventional sources. You may find a wonderful course, guide or advisor at this time.",
-        "meaning_reversed": "You may be let down by an authority figure pro other person you trust; there’s a side to this situation that has been covered up - until now.",
-    },
-    "3": {
-        "number": 3,
-        "name": "The Empress",
-        "meaning_upright": "Enjoy this productive, joyful time when you’ll have the energy to develop your projects, decorate your home, spend time with children, and give yourself a little luxury. Money flows and love grows under The Empress’s influence.",
-        "meaning_reversed": "Household problems, lack of time and money, and even a difficult older woman are the meanings of the Empress reversed. Hold on - things will improve if you keep calm.",
-    },
-    "4": {
-        "number": 4,
-        "name": "The Emperor",
-        "meaning_upright": "Help, protection and the influence of a powerful individual for whom action speaks louder than words. Tradition is the watchword of The Emperor, so this is a time to play by the rules rather than flout convention.",
-        "meaning_reversed": "Disorder; a controlling boss or older relative, poor leadership at work, bullying and upset in relationships. This person may oppose you, but view this as an opportunity to assert your own values.",
-    },
-    "5": {
-        "number": 5,
-        "name": "The Hierophant",
-        "meaning_upright": "The Hierophant stands for unity. In your everyday life, he shows you committing to your goals so they become reality; you take action rather than daydream. He’s also a symbol of education, asking you to know yourself more deeply and to be open to new wisdom.",
-        "meaning_reversed": "Perfectionism, self-criticism, and chaos in communities and at home. Projects become blocked due to miscommunication. If possible, step back and redefine what you alone want, regardless of others.",
-    },
-    "6": {
-        "number": 6,
-        "name": "The Lovers",
-        "meaning_upright": "There’s amazing potential for lasting love, or reward, but you’ll need to make a mature choice that takes into account long-term rather than short-term benefits. Consider your future rather than old attitudes that don’t serve you.",
-        "meaning_reversed": "Choosing the easier option under pressure and in relationships, feeling betrayed or let down by a partner. Don’t sacrifice your needs to keep the peace; put yourself first, even if that means walking away.",
-    },
-    "7": {
-        "number": 7,
-        "name": "The Chariot",
-        "meaning_upright": "It’s time to take charge and move on. This may be a physical journey, or progress in work, relationships and projects. The Chariot often arrives in a reading after a major decision prompted by cards such as The Lovers, Judgement or The Moon.",
-        "meaning_reversed": "Journeys and projects are delayed; a wrong turning. Recheck your plans and pay attention to detail you can fix. There’s arrogance around just now, too.",
-    },
-    "8": {
-        "number": 8,
-        "name": "Strength",
-        "meaning_upright": "There’s tension around as you will have to keep strong-minded individuals - or your own urges - in check. Hold your space, be patient, and you’ll succeed with grace. An additional meaning is balance masculine and feminine qualities.",
-        "meaning_reversed": "Avoiding facing an opponent; hiding from a challenge you could learn from. Your intuition knows not to shy away; it’s time to step up and turn the lion into a pussycat.",
-    },
-    "9": {
-        "number": 9,
-        "name": "The Hermit",
-        "meaning_upright": "The need to think and heal the past; an opportunity to know yourself more deeply and find the strength and wisdom within. This is a path you choose, and you are alone, not lonely.",
-        "meaning_reversed": "Isolation due to stubbornness; a turning away from support through fear. If you’re tired of being alone, reach out a little.",
-    },
-    "10": {
-        "number": 10,
-        "name": "Wheel of Fortune",
-        "meaning_upright": "A change for the better. Blocks to progress dissolve quickly as events move on, so be open to whatever positive change comes. Look to the future.",
-        "meaning_reversed": "The end of a negative cycle of events; you’re almost through the bad times, ready to move on to brighter possibilities.",
-    },
-    "11": {
-        "number": 11,
-        "name": "Justice",
-        "meaning_upright": "A situation is resolved, ending a period of uncertainty. This card often heralds the end of a legal matter, but in general terms it predicts balance - so harmony is restored - and success, too.",
-        "meaning_reversed": "Injustice; a decision goes against you. Keep the faith and seek out people who understand your position; turn away from those who seek to manipulate the situation for their own ends.",
-    },
-    "12": {
-        "number": 12,
-        "name": "The Hanged Man",
-        "meaning_upright": "Delay. Waiting for change is frustrating, but it does allow you time to see a situation from a different perspective and devise new creative ways forward. An additional meaning is making a sacrifice in order to move on.",
-        "meaning_reversed": "Indecision and fantasy; a refusal to be practical and get things done. Procrastination wastes your time.",
-    },
-    "13": {
-        "number": 13,
-        "name": "Death",
-        "meaning_upright": "Transformation and change. This card doesn’t mean physical death, rather a time of transition, when whatever is not needed for the future must be given up. He brings release from the past, and new beginnings and opportunities.",
-        "meaning_reversed": "Hanging onto the past; a refusal to leave the past alone.",
-    },
-    "14": {
-        "number": 14,
-        "name": "Temperance",
-        "meaning_upright": "Balancing opposites; completing a multitude of tasks at once, which tests your skills and patience. If you can keep every plate spinning, others will see just how resourceful you are. An additional meaning is an opportunity to heal past issues.",
-        "meaning_reversed": "Difficult memories; the past dominating the present. Ignoring debts and demands that need attention.",
-    },
-    "15": {
-        "number": 15,
-        "name": "The Devil",
-        "meaning_upright": "Control issues; being in a relationship or other commitment that enslaves you. This is your perception, borne from obligation, guilt or fear. You can choose to walk away at any time. An additional meaning is struggle with addiction.",
-        "meaning_reversed": "Manipulation and entrapment; an influence you find hard to resist, or one that repeats - you leave, return and leave again.",
-    },
-    "16": {
-        "number": 16,
-        "name": "The Tower",
-        "meaning_upright": "Sudden endings that feel senseless and unnecessary wake you up to the fact that none of us is in control of the universe. This destruction illuminates the hidden tension holding together an aspect of your life; let it go.On a mundane level, The Tower also represents migraine attack.",
-        "meaning_reversed": "Overthinking past events and apportioning blame. Don’t ruminate on the past - there is no fault.",
-    },
-    "17": {
-        "number": 17,
-        "name": "The Star",
-        "meaning_upright": "Guidance, hope and inspiration; a time to nurture your talents and express your feelings. You are on the right path.",
-        "meaning_reversed": "Living in a dream world, or a person full of ideas they can’t make happen just now. You may need to revise your expectations - it’s time for a reality-check.",
-    },
-    "18": {
-        "number": 18,
-        "name": "The Moon",
-        "meaning_upright": "A difficult choice. You may doubt what’s on offer and feel you can’t see a clear picture. Take your time to listen to your inner voice; you don’t need to give in to pressure to make a decision. Intuition rather than reason will light the way.",
-        "meaning_reversed": "Avoiding emotional issues; feeling disillusioned and unsafe. It may be risky, but it’s better to take a chance rather than do nothing.",
-    },
-    "19": {
-        "number": 19,
-        "name": "The Sun",
-        "meaning_upright": "Happiness, protection and joy; a successful phase. A carefree time when old worries disappear. A further meaning is good health and renewed energy.",
-        "meaning_reversed": "Frustration due to delayed plans, and holidays and projects may go on hold for a while, but don’t be downhearted - everything will get quickly back on track.",
-    },
-    "20": {
-        "number": 20,
-        "name": "Judgement",
-        "meaning_upright": "Reviewing the past; deciding if it’s worth reconsidering a decision or situation. You’re in the process of judging yourself, too, musing on your past actions and relationships.",
-        "meaning_reversed": "Guilt and worry may keep you tethered to the past. While it’s important to look back before you move on, there’s only so much soul-searching you, or someone close to you, can do.",
-    },
-    "21": {
-        "number": 21,
-        "name": "The World",
-        "meaning_upright": "A successful conclusion before the beginning of a bright new phase; the world is opening up to you. You’re also rewarded with love, new opportunities and even gifts. A further meaning is peace and optimism.",
-        "meaning_reversed": "An opportunity denied; you may feel your options are limited just now, but be patient - your time to travel and encounter exciting new opportunities will come.",
-    },
 }
 
 bot_updater = flask.Flask(__name__)
@@ -255,23 +117,6 @@ intents.message_content = True
 intents.members = True
 
 
-class BotException(Exception):
-
-    message = ""
-
-    def __init__(self, message):
-        super().__init__(message)
-        self.message = message
-
-
-class GameNotFoundException(BotException):
-    pass
-
-
-class InvalidArgumentException(BotException):
-    pass
-
-
 class CustomHelpCommand(commands.DefaultHelpCommand):
 
     async def send_bot_help(self, mapping):
@@ -295,12 +140,6 @@ class CustomHelpCommand(commands.DefaultHelpCommand):
 
 
 bot = commands.Bot(command_prefix="!", intents=intents, help_command=CustomHelpCommand())
-
-scheduler = AsyncIOScheduler(
-    job_defaults={
-        'misfire_grace_time': 3600,     # 1 hour
-    }
-)
 
 
 async def send_error_message(exception):
@@ -573,7 +412,7 @@ def paginate_embed_description(embed: discord.Embed) -> list[discord.Embed]:
 
 
 async def generate_list_embeds(server_id: int) -> Optional[list[discord.Embed]]:
-    guild = get_discord_guild_object(server_id)
+    guild = await get_discord_guild_object(bot, server_id)
     if guild is None:
         return None
 
@@ -634,8 +473,8 @@ async def generate_list_embeds(server_id: int) -> Optional[list[discord.Embed]]:
         return embeds
 
 
-def generate_hog_embed(server_id: int):
-    guild = get_discord_guild_object(server_id)
+async def generate_hog_embed(server_id: int):
+    guild = await get_discord_guild_object(bot, server_id)
     if guild is None:
         return None
 
@@ -680,26 +519,13 @@ def generate_hog_embed(server_id: int):
         return list_embed
 
 
-def get_discord_guild_object(server_id: int) -> Optional[discord.Guild]:
-    """
-    Gets Discord's guild object for the given server ID.
-    Returns None if not found.
-    """
-    # Get the Discord server object
-    guild_object = bot.get_guild(server_id)
-    if guild_object is None:
-        log(f"Discord could not find guild with ID {server_id}.")
-        return None
-    return guild_object
-
-
 async def get_live_message_object(server_id: int, message_type: LiveMessageType) -> Optional[discord.Message]:
     """
     Gets the message object for one of the live updating messages.
     Returns None if not found.
     """
     # Get the Discord guild object
-    guild_object = get_discord_guild_object(server_id)
+    guild_object = await get_discord_guild_object(bot, server_id)
     if guild_object is None:
         return None
 
@@ -805,7 +631,7 @@ async def update_hall_of_game(server_id: int) -> None:
     if hog_message is None:
         return
 
-    updated_hog_embed = generate_hog_embed(server_id)
+    updated_hog_embed = await generate_hog_embed(server_id)
     try:
         if updated_hog_embed is not None:
             await hog_message.edit(embed=updated_hog_embed)
@@ -827,190 +653,12 @@ async def update_all_lists() -> None:
             await update_list(server.id)
 
 
-def get_steam_game_data(steam_game_id: int):
-    # Check if an actual Steam game ID was given
-    if steam_game_id is None:
-        return None
-    steam_game_id = str(steam_game_id)
-
-    # API URL for getting info on a specific Steam game
-    url = f"https://store.steampowered.com/api/appdetails?appids={steam_game_id}&cc=eu"
-
-    params = {
-        "appids": steam_game_id,
-        "cc": "nl",     # Country used for pricing/currency
-        "l": "english",
-    }
-    response = requests.get(url, params=params)
-
-    if response.status_code >= 300:
-        log(f"Failed to get game with ID \"{steam_game_id}\" using Steam API: {response.status_code}")
-        log(response.json())
-        return None
-
-    response_json = response.json()
-    steam_game_data = response_json.get(steam_game_id, {}).get("data", {})
-    if not steam_game_data:
-        log(f"Warning: missing Steam info for Steam game ID {steam_game_id}: {response_json}")
-        return None
-
-    return steam_game_data
-
-
-async def get_game_price(steam_game_id: int):
-    """
-    Uses the Steam API to search for info on the given Steam game ID.
-    Returns a dictionary containing the "id", "price_current" and "price_original" keys.
-    Returns None if the game wasn't found.
-    """
-    steam_game_data = get_steam_game_data(steam_game_id)
-    if steam_game_data is None:
-        return None
-
-    game_name = steam_game_data["name"]
-
-    price_current = -1
-    price_original = -1
-    price_overview = steam_game_data.get("price_overview", {})
-    if not price_overview:
-        # Check if the game has already been released
-        unreleased = steam_game_data.get("release_date", {}).get("coming_soon", False)
-        if unreleased:
-            price_current = -2
-            price_original = -2
-        else:
-            # Sanity check to see if the game is really free
-            if not "is_free":
-                log(f"Warning: is_free is False, but missing price_overview for game {game_name}.")
-            else:
-                price_current = 0
-                price_original = 0
-    else:
-        price_currency = price_overview["currency"]
-        if price_currency != "EUR":
-            await send_error_message(f"Error: received currency {price_currency} for game {game_name}.")
-        else:
-            price_current = price_overview["final"] / 100
-            price_original = price_overview["initial"] / 100
-
-    steam_info = {
-        "id": steam_game_data["steam_appid"],
-        "price_current": price_current,
-        "price_original": price_original,
-    }
-
-    return steam_info
-
-
-def get_steam_game_banner(steam_game_id):
-    """
-    Uses the Steam API to download the banner of the given Steam game ID, and upload it to Discord.
-    Returns a Discord File object.
-    Returns None if the game wasn't found.
-    """
-    steam_game_data = get_steam_game_data(steam_game_id)
-    if steam_game_data is None:
-        return None
-    game_name = steam_game_data.get("name", "")
-
-    # Fetch the banner
-    banner_url = steam_game_data.get("header_image")
-    if banner_url is None:
-        return None
-    response = requests.get(banner_url)
-    if response.status_code >= 300:
-        log(f"Failed to get banner for Steam game ID \"{steam_game_id}\" using Steam API: {response.status_code}")
-        log(response.json())
-        return None
-
-    # Convert the banner to a Discord File and return it
-    image_bytes = BytesIO(response.content)
-    return discord.File(image_bytes, f"{game_name} banner.jpg")
-
-
-async def update_database_steam_prices():
-    with db_session_scope() as db_session:
-        games = db_session.query(Game).all()    # type: list[Game]
-        for game in games:
-            steam_game_info = await get_game_price(game.steam_id)
-            if steam_game_info is not None:
-                game.price_current = steam_game_info["price_current"]
-                game.price_original = steam_game_info["price_original"]
-
-    log("Retrieved Steam prices")
-
+async def update_steam_prices() -> None:
+    await update_database_steam_prices()
     await update_all_lists()
 
 
-def search_steam_for_game(game_name):
-    """
-    Uses the Steam API to search for the given game.
-    Returns a dictionary retrieved from the Steam API matching the given game.
-    Returns None if no results were found.
-    """
-    game_name = game_name.lower()
-
-    # API URL for searching Steam games
-    url = "https://store.steampowered.com/api/storesearch/"
-
-    params = {
-        "term": game_name,
-        "cc": "nl",     # Country used for pricing/currency
-        "l": "english",
-    }
-    response = requests.get(url, params=params)
-
-    if response.status_code >= 300:
-        log(f"Failed to search for \"{game_name}\" using Steam API: {response.status_code}")
-        log(response.json())
-        return None
-
-    response_json = response.json()
-    game_results = response_json["items"]
-    if len(game_results) == 0:
-        return None
-
-    # Check if we find any exact matches. If not, use the first result
-    for game in game_results:
-        if game["name"].lower() == game_name:
-            game_match = game
-            break
-    else:
-        game_match = game_results[0]
-
-    return game_match
-
-
-def parse_boolean(boolean_string):
-    boolean_string_lower = boolean_string.lower()
-    if boolean_string_lower[:1] in ["y", "t"]:
-        return True
-    elif boolean_string_lower[:1] in ["n", "f"]:
-        return False
-    else:
-        raise InvalidArgumentException(f"Received invalid argument ({boolean_string}). Must be either \"yes\" or \"no\".")
-
-
-def load_bedtime_scheduler_jobs():
-    with db_session_scope() as db_session:
-        bedtimes = db_session.query(Bedtime).all()  # type: list[Bedtime]
-
-    for bedtime in bedtimes:
-        # Re-schedule each bedtime job
-        hour = bedtime.bedtime_time.hour
-        minute = bedtime.bedtime_time.minute
-        scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[bedtime.user_id, bedtime.server_id], id=bedtime.scheduler_job_id)
-
-        # Re-schedule the late bedtime reminder as well
-        bedtime_late_job_id = bedtime.scheduler_job_late_id
-        bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
-        bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
-        hour_late = bedtime_late.hour
-        minute_late = bedtime_late.minute
-        scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[bedtime.user_id, bedtime.server_id, True], id=bedtime_late_job_id)
-
-
-async def load_views():
+async def load_list_views():
     with db_session_scope() as db_session:
         list_messages = (
             db_session.query(LiveMessage)
@@ -1027,7 +675,7 @@ async def load_views():
 @bot.event
 async def on_connect():
     log(f"\n\n\n{datetime.datetime.now()}")
-    scheduler.start()
+    get_scheduler().start()
 
     # Load scheduled jobs that were saved during earlier runs
     load_bedtime_scheduler_jobs()
@@ -1042,21 +690,21 @@ async def on_ready():
     log(f"{bot.user} has connected to Discord!")
 
     # Make buttons functional
-    await load_views()
+    await load_list_views()
 
     # Checks Steam and displays the updated prices
-    await update_database_steam_prices()
+    await update_steam_prices()
     # Check any free-to-keep games
     await check_free_to_keep_games(bot)
 
     # Create a job to update the prices every 6 hours
-    scheduler.add_job(update_database_steam_prices, CronTrigger(hour="0,6,12,18"))
+    get_scheduler().add_job(update_steam_prices, CronTrigger(hour="0,6,12,18"))
     # Create a job to check for new free-to-keep games every 6 hours
-    scheduler.add_job(check_free_to_keep_games, CronTrigger(hour="7,19"), args=[bot])
+    get_scheduler().add_job(check_free_to_keep_games, CronTrigger(hour="7,19"), args=[bot])
     # Create a job that makes a backup of the dataset every 12 hours
-    scheduler.add_job(create_backup, CronTrigger(hour="2,14"))
+    get_scheduler().add_job(create_backup, CronTrigger(hour="2,14"))
     # Create a job that removes old Codenames games every day
-    scheduler.add_job(codenames.clean_up_old_games, CronTrigger(hour="18"), args=[bot])
+    get_scheduler().add_job(codenames.clean_up_old_games, CronTrigger(hour="18"), args=[bot])
 
     log("Finished on_ready()")
 
@@ -1090,7 +738,7 @@ async def update_prices(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    await update_database_steam_prices()
+    await update_steam_prices()
 
     await update_live_messages(server_id)
     try:
@@ -1138,7 +786,7 @@ async def add_game(ctx, game_name):
         if steam_game_info is not None and \
                 "id" in steam_game_info:
             game.steam_id = steam_game_info["id"]
-            game_price = await get_game_price(game.steam_id)
+            game_price = await get_steam_game_price(game.steam_id)
             if game_price is not None:
                 game.price_current = game_price["price_current"]
                 game.price_original = game_price["price_original"]
@@ -1242,7 +890,7 @@ async def hall_of_game(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    hog_embed = generate_hog_embed(ctx.guild.id)
+    hog_embed = await generate_hog_embed(ctx.guild.id)
     if hog_embed is None:
         await ctx.send("Nothing to show (yet).")
         return
@@ -1808,7 +1456,7 @@ async def set_steam_id(ctx, game_name, steam_id):
 
         # Update the "steam_id" field, retrieve the price again, and save the new game data
         game.steam_id = steam_id
-        steam_game_info = await get_game_price(steam_id)
+        steam_game_info = await get_steam_game_price(steam_id)
         # Default to no price if the Steam game couldn't be found
         game.price_current = None
         game.price_original = None
@@ -1934,151 +1582,21 @@ async def send_me_free_games(ctx, notify_on_free_game="yes"):
     user_id = ctx.author.id
 
     notify = parse_boolean(notify_on_free_game)
+    await set_user_free_game_notifications(bot, user_id, notify)
 
-    with db_session_scope() as db_session:
-        free_game_subscriber = db_session.get(FreeGameSubscriber, user_id)  # type: FreeGameSubscriber
-        if not notify:
-            if free_game_subscriber is not None:
-                db_session.delete(free_game_subscriber)
-        else:
-            if free_game_subscriber is None:
-                free_game_subscriber = FreeGameSubscriber(
-                    user_id=user_id,
-                )
-                db_session.add(free_game_subscriber)
-
-            # Notify the interested user about all of the currently active deals
-            user = await get_discord_user(bot, user_id)
-            await user.send("From now on, I will send you a message whenever a game becomes free to keep.")
-
-            free_games = db_session.query(FreeGame).all()   # type: list[FreeGame]
-            for free_game in free_games:
-                formatted_message = free_game.to_markdown()
-                await user.send(formatted_message)
     try:
         await ctx.message.delete()
     except discord.Forbidden:
         pass
 
 
-def get_users_voice_channel(user_id: int, server_id: int):
-    """
-    Returns the voice channel the user is in, or None if they're not in a voice channel or could not be found.
-    """
-    guild = get_discord_guild_object(server_id)
-    if guild is None:
-        return None
-
-    user = guild.get_member(user_id)    # type: discord.Member
-    if user is None:
-        log(f"No user with ID {user_id} found.")
-        return None
-
-    if user.voice is None or user.voice.channel is None:
-        log(f"User with ID {user_id} is not in a voice channel.")
-        return None
-
-    return user.voice.channel
-
-
-async def play_audio(voice_channel: discord.VoiceChannel, audio_path):
-    try:
-        voice_client = await voice_channel.connect()
-    except Exception as e:
-        await send_error_message(f"Error: failed to connect to voice channel. {e}")
-        return
-
-    try:
-        # Wait a little to give the "joined channel" sound effect time to go away before we start playing sound
-        await asyncio.sleep(0.5)
-        voice_client.play(discord.FFmpegPCMAudio(audio_path))
-
-        while voice_client.is_playing():
-            await asyncio.sleep(1)
-    except Exception as e:
-        await send_error_message(f"Error: failed to play audio. {e}")
-
-    await voice_client.disconnect()
-
-
-async def play_bedtime_audio(user_id: int, server_id: int, late_reminder: bool = False):
-    voice_channel = get_users_voice_channel(user_id, server_id)
-    if voice_channel is None:
-        return
-
-    user_specific_bedtime_mp3 = f"bedtime_"
-    if late_reminder:
-        user_specific_bedtime_mp3 += "late_"
-    user_specific_bedtime_mp3 += f"{user_id}.mp3"
-
-    # If the user has a unique bedtime mp3, play that
-    if os.path.isfile(user_specific_bedtime_mp3):
-        await play_audio(voice_channel, user_specific_bedtime_mp3)
-    else:
-        if late_reminder:
-            # If the user has not set an mp3 for the late reminder, do not play anything
-            return
-        else:
-            # User has not set an mp3, so play the generic mp3
-            await play_audio(voice_channel, BEDTIME_MP3)
-
-
 @bot.command(name="bedtime", help="Sets a reminder for your bedtime (CET). Example: !bedtime 21:30.")
-async def set_bedtime(ctx, bedtime):
+async def set_bedtime(ctx, bedtime_time):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
     user_id = ctx.author.id
 
-    try:
-        bedtime_split = bedtime.split(":")
-        hour = int(bedtime_split[0])
-        minute = 0 if len(bedtime_split) == 1 else int(bedtime_split[1])
-        assert hour < 24
-        assert minute < 60
-    except (ValueError, IndexError, AssertionError):
-        await ctx.send("Invalid time given.")
-        return
-
-    with db_session_scope() as db_session:
-        bedtime_old = db_session.get(Bedtime, (user_id, server_id))    # type: Bedtime
-
-        # First stop any existing bedtimes for this user
-        if bedtime_old is not None:
-            try:
-                scheduler.remove_job(bedtime_old.scheduler_job_id)
-            except JobLookupError as e:
-                await send_error_message(f"Error! Unable to remove scheduled bedtime job with id {bedtime_old.scheduler_job_id}. {e}")
-            try:
-                scheduler.remove_job(bedtime_old.scheduler_job_late_id)
-            except JobLookupError as e:
-                await send_error_message(f"Error! Unable to remove scheduled late bedtime job with id {bedtime_old.scheduler_job_late_id}. {e}")
-
-        # If a negative value was given, remove the bedtime alarm
-        if hour < 0 or minute < 0:
-            if bedtime_old is not None:
-                db_session.delete(bedtime_old)
-        else:
-            # Schedule the new bedtime
-            job = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute),
-                                    args=[user_id, server_id], id=f"{server_id}_bedtime_{user_id}")
-
-            # Also schedule a later reminder
-            bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
-            bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
-            hour_late = bedtime_late.hour
-            minute_late = bedtime_late.minute
-            job_late = scheduler.add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late),
-                                         args=[user_id, server_id, True], id=f"{server_id}_bedtime_late_{user_id}")
-
-            # Save the new bedtime
-            bedtime_new = Bedtime(
-                user_id=user_id,
-                server_id=server_id,
-                bedtime_time=datetime.time(hour=hour, minute=minute),
-                scheduler_job_id=job.id,
-                scheduler_job_late_id=job_late.id,
-            )
-            db_session.add(bedtime_new)
+    await bedtime.set_bedtime(bot, server_id, user_id, bedtime_time)
 
     try:
         await ctx.message.delete()
@@ -2091,29 +1609,9 @@ async def tarot(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     username = str(ctx.author)
 
-    # Draw a random card
-    card_key = random.choice(list(TAROT_CARDS.keys()))
-    card_dict = TAROT_CARDS[card_key]
-    card_name = card_dict["name"]
-    is_reversed = random.choice([True, False])
-    card_position = "(Reversed)" if is_reversed else "(Upright)"
+    tarot_embed, tarot_file = create_random_tarot_embed(username)
 
-    # Get the image and create a Discord File object
-    image_filename = f"{card_key}-{card_name.lower().replace(' ', '-')}"
-    image_filename += "-reversed.jpg" if is_reversed else ".jpg"
-    image_path = os.path.join("tarot-cards", image_filename)
-    file = discord.File(image_path, filename=image_filename)
-
-    # Create the embed
-    title = f"{username} pulled tarot card: {card_name} {card_position}"
-    interpretation = card_dict["meaning_reversed"] if is_reversed else card_dict["meaning_upright"]
-    tarot_embed = discord.Embed(
-        title=title,
-        description=interpretation,
-        color=TAROT_EMBED_COLOR
-    )
-
-    await ctx.send(embed=tarot_embed, file=file)
+    await ctx.send(embed=tarot_embed, file=tarot_file)
     try:
         await ctx.message.delete()
     except discord.Forbidden:
@@ -2125,55 +1623,7 @@ async def horoscope(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     username = str(ctx.author)
 
-    # Create a seed based on the user's name and today's date
-    seed = hash(f"{username}{datetime.date.today()}")
-    # Use the seed for random number generation
-    rng = random.Random(seed)
-
-    THINGS = ["destiny", "puppies", "the weather", "the supernatural", "liveliness", "death", "wealth", "unreasonable demands",
-              "adventure", "bad luck", "good luck", "change", "disaster", "challenges", "unexpected news", "opportunities", "strong emotions",
-              "punishment", "short breaks", "taxes", "happiness", "new relationships", "an unexpected gift", "secrets",
-              "destiny", "revelations", "the unknown", "fortune", "a turning point", "nature", "life", "personal growth", "a chance encounter",
-              "Jo", "Alex", "Rento", "Remi"]
-    if username == "remitoid":
-        THINGS.remove("Remi")
-    elif username == "alexsaro":
-        THINGS.remove("Alex")
-    elif username == "rento247":
-        THINGS.remove("Rento")
-    elif username == "jo.bear":
-        THINGS.remove("Jo")
-
-    PREDICTIONS_PRE = ["must be cautious of", "would do well to avoid", "can expect", "might encounter", "would benefit from being accepting of",
-                       "must not be receptive to", "can not avoid", "will be delighted by", "will be doomed by", "might be taken aback by",
-                       "will experience", "could be pleasantly surprised by", "may find yourself dealing with", "should keep an eye on"]
-    WHERE = ["nearby", "close to you", "at your approximate location", "in your neighbourhood", "in your surroundings", "within reach",
-             "under your bed", "where you least expect it", "somewhere close", "just around the corner", "at a place you hold dear",
-             "in nature", "all around you", "on your daily commute", "on your next journey", "in a hidden location", "in crowded areas",
-             "on a quiet street", "in your dreams", "amidst chaos", "in technology", "out there"]
-    PREDICTIONS_POST = ["will find you", "will help you out", "might cause problems", "could appear", "will change things up",
-                        "could distract you from your goal", "will be absent", "might offer a unique chance", "may disappear"]
-    TIMES = ["before you know it", "when Mercury is in retrograde", "when you least expect it", "at an inopportune moment",
-             "in your hour of need", "at a moment of peace", "during unusual events", "at mealtime", "while you're out", "while you're relaxing",
-             "at just the right moment", "in the near future", "when the time is right", "when the opportunity arises"]
-    ADVICE = ["my advice is to", "you would do best not to", "your future might change if you", "go forth and", "consider to",
-              "be sure to", "it might be time to", "you'll find peace if you would", "try to", "do not hesitate to", "perhaps you should"]
-    ACTIONS = ["go out and explore", "stay indoors", "take it easy", "be proactive", "reconsider things", "take advantage of new opportunities",
-               "destroy your enemies", "chase your dreams", "take up a new hobby", "prepare for the worst", "start something new", "trust your instincts"]
-    CONNECTORS = ["moreover", "additionally", "on top of that", "finally", "furthermore", "on another note"]
-
-    sentence1 = f"You {rng.choice(PREDICTIONS_PRE)} {rng.choice(THINGS)} {rng.choice(WHERE)}."
-    sentence2 = f"{rng.choice(CONNECTORS).capitalize()}, {rng.choice(THINGS)} {rng.choice(PREDICTIONS_POST)} {rng.choice(TIMES)}."
-    sentence3 = f"{rng.choice(ADVICE).capitalize()} {rng.choice(ACTIONS)}."
-
-    # Create the horoscope embed
-    title = f"{username}'s horoscope :sparkles:"
-    horoscope_text = f"{sentence1} {sentence2} {sentence3}"
-    horoscope_embed = discord.Embed(
-        title=title,
-        description=horoscope_text,
-        color=HOROSCOPE_EMBED_COLOR
-    )
+    horoscope_embed = create_horoscope_embed(username)
 
     await ctx.send(embed=horoscope_embed)
     try:
@@ -2239,29 +1689,8 @@ async def view(ctx):
 async def eight_ball(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
 
-    answers = [
-        "It is certain",
-        "It is decidedly so",
-        "Without a doubt",
-        "Yes definitely",
-        "You may rely on it",
-        "As I see it, yes",
-        "Most likely",
-        "Outlook good",
-        "Yes",
-        "Signs point to yes",
-        "Reply hazy, try again",
-        "Ask again later",
-        "Better not tell you now",
-        "Cannot predict now",
-        "Concentrate and ask again",
-        "Don't count on it",
-        "My reply is no",
-        "My sources say no",
-        "Outlook not so good",
-        "Very doubtful",
-    ]
-    answer = f"The Magic 8 Ball says: *{random.choice(answers)}*."
+    answer = use_eight_ball()
+
     await ctx.send(answer)
 
 
@@ -2282,42 +1711,11 @@ async def choose(ctx, *options):
 @bot.command(name="roll", help="Performs the given dice rolls and shows the result. Example: !roll 2d8+3.")
 async def roll_dice(ctx, expression):
     log(f"{ctx.author}: {ctx.message.content}")
+    username = str(ctx.author)
 
-    if not re.fullmatch(r"[\d+\-*/().d\s]+", expression):
-        raise InvalidArgumentException(f"The entered dice rolls contains invalid characters.")
+    message_text = dice_roller.roll_dice(username, expression)
 
-    # Ensure Discord doesn't try to parse the asterisks
-    expression = expression.replace("*", "\\*")
-
-    display_text = expression
-    eval_expression = expression
-    display_offset = 0
-    eval_offset = 0
-
-    for match in re.finditer(r"(\d+)d(\d+)", expression):
-        amount, sides = map(int, match.groups())
-        rolls = [random.randint(1, sides) for _ in range(amount)]
-
-        rolls_text = "+".join(str(roll) for roll in rolls)
-        rolls_text = f"`{rolls_text}`"  # Make results of individual dice rolls monospace
-
-        start, end = match.start(), match.end()
-        # Replace the dice roll with the results of the dice roll
-        display_text = display_text[:start + display_offset] + rolls_text + display_text[end + display_offset:]
-        # Keep track of how much the display string shifted in length compared to the original string
-        display_offset += len(rolls_text) - (end - start)
-
-        eval_string = str(sum(rolls))
-        # Do the same for the eval string
-        eval_expression = eval_expression[:start + eval_offset] + eval_string + eval_expression[end + eval_offset:]
-        eval_offset += len(eval_string) - (end - start)
-
-    # Remove backslashes and compute the result
-    eval_expression = eval_expression.replace("\\", "")
-    result = eval(eval_expression)
-
-    message_text = f"{ctx.author.name} rolls: {expression}.\nResult: {display_text} = **{result}**.\n## **{result}**"
-    message = await ctx.send(message_text)
+    await ctx.send(message_text)
     try:
         await ctx.message.delete()
     except discord.Forbidden:
