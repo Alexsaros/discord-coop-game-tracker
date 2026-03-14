@@ -431,7 +431,7 @@ async def generate_list_embeds(server_id: int) -> Optional[list[discord.Embed]]:
         games_list = []     # type: list[str]
         for game, score in sorted_games:
             # Get everyone who hasn't voted yet
-            non_voters_ids = [member.id for member in members]
+            non_voters_ids = [member.user_id for member in members]
 
             voters_ids = (
                 db_session.query(GameUserData.user_id)
@@ -677,7 +677,7 @@ async def on_connect():
     get_scheduler().start()
 
     # Load scheduled jobs that were saved during earlier runs
-    load_bedtime_scheduler_jobs()
+    load_bedtime_scheduler_jobs(bot)
 
     codenames.load_games(bot)
 
