@@ -1,7 +1,7 @@
 import random
 import re
 
-from main import InvalidArgumentException
+from shared.exceptions import InvalidArgumentException
 
 
 def roll_dice(username: str, expression: str) -> str:

@@ -3,7 +3,7 @@ from discord.ext.commands import Bot
 
 from apis.discord import get_discord_user
 from apis.free_games import get_free_to_keep_games
-from shared.logger import send_error_message
+from shared.error_reporter import send_error_message
 from database.db import db_session_scope
 from database.models.free_game import FreeGame
 from database.models.free_game_subscriber import FreeGameSubscriber

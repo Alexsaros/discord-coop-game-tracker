@@ -5,7 +5,7 @@ from discord.ext.commands import Bot
 from dotenv import load_dotenv
 
 from dateutil import parser
-from shared.logger import send_error_message
+from shared.error_reporter import send_error_message
 from database.db import db_session_scope
 from database.models.free_game import FreeGame, GameType
 

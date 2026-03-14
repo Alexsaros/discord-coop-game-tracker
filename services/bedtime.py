@@ -11,7 +11,7 @@ from apis.discord import get_user_voice_channel
 from database.db import db_session_scope
 from database.models import Bedtime
 from shared.exceptions import InvalidArgumentException
-from shared.logger import send_error_message
+from shared.error_reporter import send_error_message
 from shared.scheduler import get_scheduler
 
 BEDTIME_MP3 = "bedtime.mp3"
