@@ -23,6 +23,7 @@ import hashlib
 from sqlalchemy.orm import joinedload, Session
 
 from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam_for_game, update_database_steam_prices
+from database.utils import get_server_members
 from services.bedtime import load_bedtime_scheduler_jobs
 from shared import logger
 from apis.discord import get_discord_guild_object, delete_message
@@ -424,8 +425,7 @@ async def generate_list_embeds(server_id: int) -> Optional[list[discord.Embed]]:
                 .all()
         )   # type: list[Game]
 
-        # TODO get member count from database
-        members = [member for member in guild.members if not member.bot]
+        members = get_server_members(server_id)
         sorted_games = sort_games_by_score(games, len(members))
 
         games_list = []     # type: list[str]
@@ -491,8 +491,7 @@ async def generate_hog_embed(server_id: int):
             log("No finished games found.")
             return None
 
-        # TODO get member count from database
-        members = [member for member in guild.members if not member.bot]
+        members = get_server_members(server_id)
         sorted_games = sort_games_by_score(games, len(members))
 
         games_list = []
@@ -980,8 +979,7 @@ async def play_without(ctx, username):
             await ctx.send(f"Could not find user named \"{username}\".")
             return
 
-        # TODO get member count from database
-        members = [member for member in ctx.guild.members if not member.bot]
+        members = get_server_members(server_id)
         member_count = len(members)
         game_scores = []    # type: list[tuple[Game, int]]
 
@@ -1074,8 +1072,7 @@ async def display_owned_games(ctx):
     server_id = ctx.guild.id
 
     with db_session_scope() as db_session:
-        # TODO get member count from database
-        members = [member for member in ctx.guild.members if not member.bot]
+        members = get_server_members(server_id)
         member_count = len(members)
 
         games = (
