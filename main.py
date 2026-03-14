@@ -1714,6 +1714,10 @@ async def update_db_hook(ctx):
             server = Server(id=server_id)
             db_session.add(server)
 
+        # Don't save anything about this user if they are a bot
+        if ctx.author.bot:
+            return
+
         # Ensure there is a database entry for this user
         user_id = ctx.author.id
         user = db_session.get(User, user_id)
@@ -1733,7 +1737,6 @@ async def update_db_hook(ctx):
         # Ensure this user has a database entry for this server
         member = db_session.get(ServerMember, (user_id, server_id))
         if not member:
-            # TODO check if it is possible they are a bot
             member = ServerMember(
                 user_id=user_id,
                 server_id=server_id
