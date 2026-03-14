@@ -14,3 +14,7 @@ class GameNotFoundException(BotException):
 
 class InvalidArgumentException(BotException):
     pass
+
+
+class ApiException(Exception):
+    pass

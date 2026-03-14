@@ -12,17 +12,18 @@ from database.models.free_game import FreeGame, GameType
 load_dotenv()
 
 ITAD_API_KEY = os.getenv("ITAD_API_KEY")
+ITAD_DEALS_ENDPOINT = "https://api.isthereanydeal.com/deals/v2"
 
 
 async def get_free_to_keep_games(bot: Bot) -> list[FreeGame]:
-    itad_deals_endpoint = "https://api.isthereanydeal.com/deals/v2"
     params = {
         "key": ITAD_API_KEY,
         "filter": "N4IgDgTglgxgpiAXKAtlAdk9BXANrgGhBQEMAPJABgF9qg",     # Only free games (up to 0 euro)
         "mature": True,
     }
 
-    response = requests.get(itad_deals_endpoint, params=params)
+    # TODO use aiohttp
+    response = requests.get(ITAD_DEALS_ENDPOINT, params=params)
     try:
         response.raise_for_status()
     except Exception as e:

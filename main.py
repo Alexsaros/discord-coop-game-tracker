@@ -22,6 +22,7 @@ import hashlib
 
 from sqlalchemy.orm import joinedload, Session
 
+from apis.igdb import get_multiplayer_info_from_igdb, MultiplayerInfo
 from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam_for_game, update_database_steam_prices
 from database.utils import get_server_members
 from services.bedtime import load_bedtime_scheduler_jobs
@@ -792,6 +793,17 @@ async def add_game(ctx, game_name):
             if game_price is not None:
                 game.price_current = game_price["price_current"]
                 game.price_original = game_price["price_original"]
+
+        # Get multiplayer info from IGDB
+        multiplayer_info = await get_multiplayer_info_from_igdb(bot, game_name)   # type: MultiplayerInfo
+        if multiplayer_info.max_players_online > 0:
+            game.player_count = multiplayer_info.max_players_online
+        if multiplayer_info.max_players_offline > 0:
+            game.local = True
+        if multiplayer_info.campaign_coop is False:
+            if game.tags is None:
+                game.tags = []
+            game.tags.append("No co-op campaign.")
 
         db_session.add(game)
 
