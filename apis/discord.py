@@ -46,3 +46,11 @@ async def get_user_voice_channel(bot: Bot, user_id: int, server_id: int) -> Opti
         return None
 
     return user.voice.channel
+
+
+async def delete_message(message: discord.Message) -> None:
+    try:
+        await message.delete()
+    except discord.Forbidden:
+        # Message is likely a DM
+        pass

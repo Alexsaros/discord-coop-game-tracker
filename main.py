@@ -25,7 +25,7 @@ from sqlalchemy.orm import joinedload, Session
 from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam_for_game, update_database_steam_prices
 from services.bedtime import load_bedtime_scheduler_jobs
 from shared import logger
-from apis.discord import get_discord_guild_object
+from apis.discord import get_discord_guild_object, delete_message
 from constants import EMBED_MAX_CHARACTERS, EMBED_DESCRIPTION_MAX_CHARACTERS, EMBED_MAX_FIELDS
 from libraries import codenames
 from shared.exceptions import BotException, GameNotFoundException
@@ -741,10 +741,7 @@ async def update_prices(ctx):
     await update_steam_prices()
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
@@ -794,10 +791,7 @@ async def add_game(ctx, game_name):
         db_session.add(game)
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="remove", help="Removes a game from the list. Example: !remove \"game name\".")
@@ -812,10 +806,7 @@ async def remove_game(ctx, game_name):
         db_session.delete(game)
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="finish", help="Marks a game as finished, moving it to the completed games list. Example: !finish \"game name\".")
@@ -850,10 +841,7 @@ async def finish_game(ctx, game_name):
         await hog_channel.create_thread(name=f"{game.name} screenshots", type=discord.ChannelType.public_thread)
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="enjoyed", help="Rate how much you enjoyed a game, between 0-10. Example: !enjoyed \"game name\" 7.5. Default rating is 5.")
@@ -879,10 +867,7 @@ async def enjoyed(ctx, game_name, score=5.0):
         game_user_data.enjoyment_score = score
 
     await update_hall_of_game(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="hog", help=":boar:")
@@ -906,10 +891,7 @@ async def hall_of_game(ctx):
         )
         db_session.add(hog_live_message)
 
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. Default vote is 5.")
@@ -935,10 +917,7 @@ async def vote_game(ctx, game_name, score=5.0):
         game_user_data.vote = score
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="list", help="Displays a sorted list of all games. Example: !list.")
@@ -975,10 +954,7 @@ async def list_games(ctx):
         )
         db_session.add(list_live_message)
 
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="play_without", help="Displays a sorted list of games that the given user rated low. Example: !play_without alexsaro. :cry:")
@@ -1081,10 +1057,7 @@ async def play_without(ctx, username):
 
         await ctx.send(embed=list_embed)
 
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="owned_games", help="Displays a list of games that everyone has marked as owned. Example: !owned_games.")
@@ -1145,10 +1118,7 @@ async def display_owned_games(ctx):
 
         await ctx.send(embed=list_embed)
 
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="edit", help="Displays the given game as a message to be able edit it using its reactions. Example: !edit \"game name\".")
@@ -1162,10 +1132,7 @@ async def edit(ctx, game_name):
     edit_game = EditGame(game.server_id, game.id, ctx.channel.id)
     await edit_game.send_message()
 
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 class EditGame:
@@ -1319,10 +1286,7 @@ async def add_tag(ctx, game_name, tag_text):
         game.tags.append(tag_text)
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="remove_tag", help="Removes a tag from a game. Example: !remove_tag \"game name\" \"PvP only\".")
@@ -1340,10 +1304,7 @@ async def remove_tag(ctx, game_name, tag_text):
         game.tags.remove(tag_text)
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. Defaults to \"yes\".")
@@ -1366,10 +1327,7 @@ async def own(ctx, game_name, owns_game="yes"):
             game_user_data.played_before = False
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="players", help="Sets with how many players a game can be played, ranging from 1-4. Example: !players \"game name\" 4.")
@@ -1390,10 +1348,7 @@ async def players(ctx, game_name, player_count):
         game.player_count = player_count
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="local", help="Sets whether a game can be played together with one copy. Example: !local \"game name\" no. Defaults to \"yes\".")
@@ -1409,10 +1364,7 @@ async def set_local(ctx, game_name, is_local="yes"):
         game.local = local
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="played", help="Sets whether you have played a game before or not. Example: !played \"game name\" no. Defaults to \"yes\".")
@@ -1433,10 +1385,7 @@ async def set_played(ctx, game_name, played_before="yes"):
         game_user_data.played_before = experienced
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="steam_id", help="Links a game to a steam ID for the purpose of retrieving prices. Example: !steam_id \"game name\" 105600.")
@@ -1465,10 +1414,7 @@ async def set_steam_id(ctx, game_name, steam_id):
             game.price_original = steam_game_info["price_original"]
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="alias", help="Sets an alias for yourself, to be displayed in the overview. Example: !alias :sunglasses:. Leave empty to clear it.")
@@ -1483,10 +1429,7 @@ async def set_alias(ctx, new_alias=None):
         server_member.alias = new_alias
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="rename", help="Change the name of a game. Example: !rename \"game name\" \"new game name\".")
@@ -1500,10 +1443,7 @@ async def rename_game(ctx, game_name, new_game_name):
         game.name = new_game_name
 
     await update_live_messages(server_id)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="affinity", help="Shows how similarly you vote to other people. Example: !affinity.")
@@ -1570,10 +1510,7 @@ async def show_affinity(ctx):
         )
 
     await ctx.send(embed=affinity_embed)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="send_me_free_games", help="Opt in or out of receiving a message when a game is free to keep. Example: !send_me_free_games no. Defaults to \"yes\".")
@@ -1584,10 +1521,7 @@ async def send_me_free_games(ctx, notify_on_free_game="yes"):
     notify = parse_boolean(notify_on_free_game)
     await set_user_free_game_notifications(bot, user_id, notify)
 
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="bedtime", help="Sets a reminder for your bedtime (CET). Example: !bedtime 21:30.")
@@ -1598,10 +1532,7 @@ async def set_bedtime(ctx, bedtime_time):
 
     await bedtime.set_bedtime(bot, server_id, user_id, bedtime_time)
 
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="tarot", help="Draws a major arcana tarot card. Example: !tarot.")
@@ -1612,10 +1543,7 @@ async def tarot(ctx):
     tarot_embed, tarot_file = create_random_tarot_embed(username)
 
     await ctx.send(embed=tarot_embed, file=tarot_file)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="horoscope", help="Divines your daily horoscope. Example: !horoscope.")
@@ -1626,10 +1554,7 @@ async def horoscope(ctx):
     horoscope_embed = create_horoscope_embed(username)
 
     await ctx.send(embed=horoscope_embed)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
@@ -1701,11 +1626,8 @@ async def choose(ctx, *options):
     selected_option = random.choice(options)
     options_string = ", ".join(options)
     message_text = f"Possible options: {options_string}.\nChosen: **{selected_option}**."
-    message = await ctx.send(message_text)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await ctx.send(message_text)
+    await delete_message(ctx.message)
 
 
 @bot.command(name="roll", help="Performs the given dice rolls and shows the result. Example: !roll 2d8+3.")
@@ -1716,10 +1638,7 @@ async def roll_dice(ctx, expression):
     message_text = dice_roller.roll_dice(username, expression)
 
     await ctx.send(message_text)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="codenames", help="Start a Codenames game.")
@@ -1727,10 +1646,7 @@ async def start_codenames(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
 
     await codenames.create_new_game(ctx)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.command(name="codenames_settings", help="Open the settings menu for Codenames.")
@@ -1738,10 +1654,7 @@ async def codenames_settings(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
 
     await codenames.show_settings(ctx)
-    try:
-        await ctx.message.delete()
-    except discord.Forbidden:
-        pass
+    await delete_message(ctx.message)
 
 
 @bot.event
