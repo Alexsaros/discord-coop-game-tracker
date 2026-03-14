@@ -227,9 +227,9 @@ def sort_games_by_score(games: list[Game], member_count: int) -> list[tuple[Game
             )   # type: list[GameUserData]
 
             if not game.finished:
-                votes = [data.vote for data in game_user_data_list]
+                votes = [data.vote for data in game_user_data_list if data.vote is not None]
             else:
-                votes = [data.enjoyment_score for data in game_user_data_list]
+                votes = [data.enjoyment_score for data in game_user_data_list if data.enjoyment_score is not None]
 
         total_score = sum(votes)
         # Use a score of 5 for the non-voters
@@ -1089,7 +1089,7 @@ async def display_owned_games(ctx):
                     .all()
             )   # type: list[GameUserData]
 
-            owned_count = sum(1 for data in game_user_data_list if data.owned)
+            owned_count = sum(1 for data in game_user_data_list if data.owned is True)
             if owned_count >= member_count:
                 owned_games.append(game)
 
