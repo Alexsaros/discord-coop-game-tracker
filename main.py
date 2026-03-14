@@ -758,7 +758,15 @@ async def add_game(ctx, game_name):
 
     with db_session_scope() as db_session:
         try:
-            game = get_game(db_session, server_id, game_name)   # TODO handle case when the game is already finished
+            game = get_game(db_session, server_id, game_name, finished=True)
+            log(f"Game already finished: {str(game.name)}")
+            await ctx.send("This game has already been finished.")
+            return
+        except GameNotFoundException:
+            pass
+
+        try:
+            game = get_game(db_session, server_id, game_name)
             log(f"Game already added: {str(game.name)}")
             await ctx.send("This game has already been added.")
             return
