@@ -332,8 +332,7 @@ def get_game_embed_field(game: Game):
         description += "\n> Owned: "
 
         if owned_user_data_list:
-            # Sums the True/False values, with them corresponding to 1/0
-            owned_count = sum(data.owned for data in owned_user_data_list)
+            owned_count = sum(1 for data in owned_user_data_list if data.owned)
             description += EMOJIS["owned"] * owned_count
             description += EMOJIS["not_owned"] * (len(owned_user_data_list) - owned_count)
 
@@ -343,8 +342,7 @@ def get_game_embed_field(game: Game):
     played_before_user_data_list = [data for data in game_user_data_list if data.played_before is not None]
     if played_before_user_data_list:
         description += "\n> Experience: "
-        # Sums the True/False values, with them corresponding to 1/0
-        played_before_count = sum(data.played_before for data in played_before_user_data_list)
+        played_before_count = sum(1 for data in played_before_user_data_list if data.played_before)
         description += EMOJIS["experienced"] * played_before_count
         description += EMOJIS["new"] * (len(played_before_user_data_list) - played_before_count)
 
@@ -1091,8 +1089,7 @@ async def display_owned_games(ctx):
                     .all()
             )   # type: list[GameUserData]
 
-            # Sums the True/False values, with them corresponding to 1/0
-            owned_count = sum(data.owned for data in game_user_data_list)
+            owned_count = sum(1 for data in game_user_data_list if data.owned)
             if owned_count >= member_count:
                 owned_games.append(game)
 

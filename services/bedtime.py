@@ -120,6 +120,9 @@ async def set_bedtime(bot: Bot, server_id: int, user_id: int, bedtime: str):
             job_late = get_scheduler().add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late),
                                                args=[bot, user_id, server_id, True], id=f"{server_id}_bedtime_late_{user_id}")
 
+            # Delete the old bedtime
+            db_session.delete(bedtime_old)
+
             # Save the new bedtime
             bedtime_new = Bedtime(
                 user_id=user_id,
