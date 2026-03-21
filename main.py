@@ -23,7 +23,8 @@ import hashlib
 from sqlalchemy.orm import joinedload, Session
 
 from apis.igdb import get_multiplayer_info_from_igdb, MultiplayerInfo
-from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam_for_game, update_database_steam_prices
+from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam_for_game, update_database_steam_prices, \
+    update_game_steam_prices_fields
 from apis.steam_web import get_steam_user_id, get_owned_steam_games, update_database_games_with_steam_user_data, \
     update_database_game_user_data
 from database.utils import get_server_members
@@ -270,12 +271,17 @@ def get_users_aliases_string(server_id: int, user_ids: list[int]) -> str:
 
 
 def generate_price_text(game: Game) -> str:
-    price_text = ""
     if game is None:
-        return price_text
-    if game.release_state != ReleaseState.RELEASED:
-        price_text = "coming soon"
-    elif game.price_original >= 0:
+        return ""
+
+    release_state_text = ""
+    if game.release_state == ReleaseState.UNRELEASED:
+        release_state_text = "*coming soon*"
+    elif game.release_state == ReleaseState.EARLY_ACCESS:
+        release_state_text = "*early access*"
+
+    price_text = ""
+    if game.price_original is not None and game.price_current is not None:
         price_original = game.price_original
         price_current = game.price_current
 
@@ -292,7 +298,7 @@ def generate_price_text(game: Game) -> str:
                     discount_percent = int(((price_original - price_current) / price_original) * 100)
                     price_text = f"~~{price_text}~~ **€{price_current:.2f}** (-{discount_percent}%)"
 
-    return price_text
+    return " ".join([release_state_text, price_text])
 
 
 def get_game_embed_field(game: Game):
@@ -792,9 +798,7 @@ async def add_game(ctx, game_name):
                 "id" in steam_game_info:
             game.steam_id = steam_game_info["id"]
             game_price = await get_steam_game_price(game.steam_id)
-            if game_price is not None:
-                game.price_current = game_price["price_current"]
-                game.price_original = game_price["price_original"]
+            update_game_steam_prices_fields(game, game_price)
 
         # If this game has a Steam ID, for each user with a Steam ID, check if they have owned or played the game
         if game.steam_id:
@@ -1438,12 +1442,7 @@ async def set_steam_id(ctx, game_name, steam_id):
         # Update the "steam_id" field, retrieve the price again, and save the new game data
         game.steam_id = steam_id
         steam_game_info = await get_steam_game_price(steam_id)
-        # Default to no price if the Steam game couldn't be found
-        game.price_current = None
-        game.price_original = None
-        if steam_game_info is not None:
-            game.price_current = steam_game_info["price_current"]
-            game.price_original = steam_game_info["price_original"]
+        update_game_steam_prices_fields(game, steam_game_info)
 
     await update_live_messages(server_id)
     await delete_message(ctx.message)

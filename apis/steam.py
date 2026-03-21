@@ -5,7 +5,7 @@ import discord
 import requests
 
 from database.db import db_session_scope
-from database.models import Game
+from database.models import Game, ReleaseState
 from shared.logger import log
 
 
@@ -42,7 +42,7 @@ def get_steam_game_data(steam_game_id: int) -> Optional[dict]:
 async def get_steam_game_price(steam_game_id: int) -> Optional[dict]:
     """
     Uses the Steam API to search for info on the given Steam game ID.
-    Returns a dictionary containing the "id", "price_current" and "price_original" keys.
+    Returns a dictionary containing the "id", "price_current", "price_original", and "release_state" keys.
     Returns None if the game wasn't found.
     """
     steam_game_data = get_steam_game_data(steam_game_id)
@@ -51,36 +51,41 @@ async def get_steam_game_price(steam_game_id: int) -> Optional[dict]:
 
     game_name = steam_game_data["name"]
 
-    # TODO fix prices
-    price_current = -1
-    price_original = -1
-    price_overview = steam_game_data.get("price_overview", {})
-    if not price_overview:
-        # Check if the game has already been released
-        unreleased = steam_game_data.get("release_date", {}).get("coming_soon", False)
-        if unreleased:
-            # TODO
-            price_current = -2
-            price_original = -2
+    # Figure out if the game is released
+    release_state = ReleaseState.RELEASED
+    if steam_game_data.get("release_date", {}).get("coming_soon", False):
+        release_state = ReleaseState.UNRELEASED
+    for genre in steam_game_data.get("genres", []):
+        if genre["id"] == "70":     # Early Access
+            release_state = ReleaseState.EARLY_ACCESS
+
+    # Check if we know the prices
+    price_current = None
+    price_original = None
+    if release_state is not ReleaseState.UNRELEASED:
+        price_overview = steam_game_data.get("price_overview", {})
+
+        if price_overview:
+            price_currency = price_overview["currency"]
+            if price_currency != "EUR":
+                log(f"Error: received currency {price_currency} for game {game_name}.")
+            else:
+                price_current = price_overview["final"] / 100
+                price_original = price_overview["initial"] / 100
+
         else:
             # Sanity check to see if the game is really free
-            if not "is_free":
-                log(f"Warning: is_free is False, but missing price_overview for game {game_name}.")
-            else:
+            if steam_game_data["is_free"]:
                 price_current = 0
                 price_original = 0
-    else:
-        price_currency = price_overview["currency"]
-        if price_currency != "EUR":
-            log(f"Error: received currency {price_currency} for game {game_name}.")
-        else:
-            price_current = price_overview["final"] / 100
-            price_original = price_overview["initial"] / 100
+            else:
+                log(f"Warning: is_free is False, but missing price_overview for game {game_name}.")
 
     steam_info = {
         "id": steam_game_data["steam_appid"],
         "price_current": price_current,
         "price_original": price_original,
+        "release_state": release_state,
     }
 
     return steam_info
@@ -117,11 +122,21 @@ async def update_database_steam_prices():
         games = db_session.query(Game).all()    # type: list[Game]
         for game in games:
             steam_game_info = await get_steam_game_price(game.steam_id)
-            if steam_game_info is not None:
-                game.price_current = steam_game_info["price_current"]
-                game.price_original = steam_game_info["price_original"]
+            update_game_steam_prices_fields(game, steam_game_info)
 
     log("Retrieved Steam prices")
+
+
+def update_game_steam_prices_fields(game: Game, steam_game_info: dict):
+    if steam_game_info is not None:
+        game.price_current = steam_game_info["price_current"]
+        game.price_original = steam_game_info["price_original"]
+        game.release_state = steam_game_info["release_state"]
+    else:
+        # Default to no price if the Steam game couldn't be found
+        game.price_current = None
+        game.price_original = None
+        game.release_state = None
 
 
 def search_steam_for_game(game_name: str) -> Optional[dict]:
