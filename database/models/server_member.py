@@ -11,5 +11,6 @@ class ServerMember(BaseModel):
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     server_id = Column(Integer, ForeignKey("servers.id"), primary_key=True)
     alias = Column(String)
+    steam_id = Column(Integer)
 
     user = relationship("User")     # type: User

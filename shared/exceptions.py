@@ -12,6 +12,14 @@ class GameNotFoundException(BotException):
     pass
 
 
+class UserNotFoundException(BotException):
+    pass
+
+
+class NoAccessException(BotException):
+    pass
+
+
 class InvalidArgumentException(BotException):
     pass
 

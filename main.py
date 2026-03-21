@@ -24,13 +24,15 @@ from sqlalchemy.orm import joinedload, Session
 
 from apis.igdb import get_multiplayer_info_from_igdb, MultiplayerInfo
 from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam_for_game, update_database_steam_prices
+from apis.steam_web import get_steam_user_id, get_owned_steam_games, update_database_games_with_steam_user_data, \
+    update_database_game_user_data
 from database.utils import get_server_members
 from services.bedtime import load_bedtime_scheduler_jobs
 from shared import error_reporter
 from apis.discord import get_discord_guild_object, delete_message
 from constants import EMBED_MAX_CHARACTERS, EMBED_DESCRIPTION_MAX_CHARACTERS, EMBED_MAX_FIELDS
 from libraries import codenames
-from shared.exceptions import BotException, GameNotFoundException
+from shared.exceptions import BotException, GameNotFoundException, NoAccessException
 from shared.logger import log
 from services import dice_roller, bedtime
 from services.eight_ball import use_eight_ball
@@ -794,6 +796,21 @@ async def add_game(ctx, game_name):
                 game.price_current = game_price["price_current"]
                 game.price_original = game_price["price_original"]
 
+        # If this game has a Steam ID, for each user with a Steam ID, check if they have owned or played the game
+        if game.steam_id:
+            members = (
+                db_session.query(ServerMember)
+                    .filter(ServerMember.server_id == server_id)
+                    .filter(ServerMember.steam_id.isnot(None))
+                    .all()
+            )   # type: list[ServerMember]
+            for member in members:
+                try:
+                    owned_games = await get_owned_steam_games(member.steam_id)
+                    update_database_game_user_data(db_session, server_id, game.id, member.user_id, game.steam_id, owned_games)
+                except NoAccessException as e:
+                    await ctx.send(e.message)
+
         # Get multiplayer info from IGDB
         multiplayer_info = await get_multiplayer_info_from_igdb(bot, game_name)   # type: MultiplayerInfo
         if multiplayer_info is not None:
@@ -1536,6 +1553,31 @@ async def send_me_free_games(ctx, notify_on_free_game="yes"):
     notify = parse_boolean(notify_on_free_game)
     await set_user_free_game_notifications(bot, user_id, notify)
 
+    await delete_message(ctx.message)
+
+
+@bot.command(name="link_steam", help="Link your Steam account to automatically fetch owned and played games. Accepts a Steam profile ID or custom URL ID. Example: !link_steam 76561198071149263.")
+async def link_steam_account(ctx, steam_profile_id):
+    log(f"{ctx.author}: {ctx.message.content}")
+    server_id = ctx.guild.id
+    user_id = ctx.author.id
+
+    try:
+        steam_user_id = int(steam_profile_id)
+    except ValueError:
+        steam_user_id = await get_steam_user_id(steam_profile_id)
+
+    owned_games = await get_owned_steam_games(steam_user_id)
+
+    with db_session_scope() as db_session:
+        server_member = db_session.get(ServerMember, (user_id, server_id))  # type: ServerMember
+
+        # Save the Steam ID for this user in the database
+        server_member.steam_id = steam_user_id
+
+        update_database_games_with_steam_user_data(db_session, server_id, user_id, owned_games)
+
+    await update_live_messages(server_id)
     await delete_message(ctx.message)
 
 
