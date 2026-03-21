@@ -26,7 +26,7 @@ from apis.igdb import get_multiplayer_info_from_igdb, MultiplayerInfo
 from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam_for_game, update_database_steam_prices
 from database.utils import get_server_members
 from services.bedtime import load_bedtime_scheduler_jobs
-from shared import logger
+from shared import error_reporter
 from apis.discord import get_discord_guild_object, delete_message
 from constants import EMBED_MAX_CHARACTERS, EMBED_DESCRIPTION_MAX_CHARACTERS, EMBED_MAX_FIELDS
 from libraries import codenames
@@ -145,7 +145,7 @@ bot = commands.Bot(command_prefix="!", intents=intents, help_command=CustomHelpC
 
 
 async def send_error_message(exception):
-    await logger.send_error_message(bot, exception)
+    await error_reporter.send_error_message(bot, exception)
 
 
 def create_backup(file_to_backup=DATABASE_FILE):
