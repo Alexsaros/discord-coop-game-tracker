@@ -5,7 +5,9 @@ from alembic.config import Config
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-engine = create_engine("sqlite:///database/bot_data.db", echo=False)
+DATABASE_FILE = "database/bot_data.db"
+
+engine = create_engine("sqlite:///" + DATABASE_FILE, echo=False)
 SessionMaker = sessionmaker(bind=engine, expire_on_commit=False)
 BaseModel = declarative_base()
 
