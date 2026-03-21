@@ -355,9 +355,9 @@ def get_game_embed_field(game: Game):
         description += EMOJIS["experienced"] * played_before_count
         description += EMOJIS["new"] * (len(played_before_user_data_list) - played_before_count)
 
-    tags = game.tags
-    if len(tags) > 0:
-        description += "\n> " + "\n> ".join(tags)
+    notes = game.notes
+    if len(notes) > 0:
+        description += "\n> " + "\n> ".join(notes)
 
     description = description.strip()
 
@@ -823,9 +823,9 @@ async def add_game(ctx, game_name):
             if multiplayer_info.max_players_offline > 0:
                 game.local = True
             if multiplayer_info.campaign_coop is False:
-                if game.tags is None:
-                    game.tags = []
-                game.tags.append("No co-op campaign.")
+                if game.notes is None:
+                    game.notes = []
+                game.notes.append("No co-op campaign.")
 
         db_session.add(game)
 
@@ -1311,33 +1311,33 @@ class EditGame:
                 await send_error_message(e)
 
 
-@bot.command(name="tag", help="Adds an informative tag to a game. Example: !tag \"game name\" \"PvP only\".")
-async def add_tag(ctx, game_name, tag_text):
+@bot.command(name="add_note", help="Adds an informative note to a game. Example: !add_note \"game name\" \"PvP only\".")
+async def add_note(ctx, game_name, note_text):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
     with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
-        game.tags.append(tag_text)
+        game.notes.append(note_text)
 
     await update_live_messages(server_id)
     await delete_message(ctx.message)
 
 
-@bot.command(name="remove_tag", help="Removes a tag from a game. Example: !remove_tag \"game name\" \"PvP only\".")
-async def remove_tag(ctx, game_name, tag_text):
+@bot.command(name="remove_note", help="Removes a note from a game. Example: !remove_note \"game name\" \"PvP only\".")
+async def remove_note(ctx, game_name, note_text):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
     with db_session_scope() as db_session:
         game = get_game(db_session, server_id, game_name)
 
-        if tag_text not in game.tags:
-            await ctx.send(f"Game \"{game.name}\" does not have tag \"{tag_text}\".")
+        if note_text not in game.notes:
+            await ctx.send(f"Game \"{game.name}\" does not have note \"{note_text}\".")
             return
 
-        game.tags.remove(tag_text)
+        game.notes.remove(note_text)
 
     await update_live_messages(server_id)
     await delete_message(ctx.message)

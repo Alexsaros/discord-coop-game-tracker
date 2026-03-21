@@ -20,7 +20,7 @@ class Game(BaseModel):
     name = Column(String, nullable=False)
     submitter = Column(String, nullable=False)
 
-    tags = Column(MutableList.as_mutable(JSON), default=list)
+    notes = Column(MutableList.as_mutable(JSON), default=list)
 
     player_count = Column(Integer)
     steam_id = Column(Integer)
