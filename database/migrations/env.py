@@ -5,10 +5,20 @@ from sqlalchemy import pool
 
 from alembic import context
 
+import sys
+import os
+
+project_root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+# Allows alembic to handle Python imports from the root directory
+sys.path.append(project_root_dir)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
+
+# Ensures alembic refers to the correct .db file
+db_file_path = os.path.join(project_root_dir, "database", "bot_data.db")
+config.set_main_option("sqlalchemy.url", f"sqlite:///{db_file_path}")
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

@@ -25,5 +25,7 @@ def db_session_scope():
 
 def update_db():
     # Run migrations
+    # Migration can be created by running (in /database):
+    # alembic revision --autogenerate -m "example message"
     alembic_cfg = Config("database/alembic.ini")
     command.upgrade(alembic_cfg, "head")
