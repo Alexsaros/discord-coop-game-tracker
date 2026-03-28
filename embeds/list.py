@@ -54,6 +54,11 @@ async def generate_list_embeds(bot: Bot, server_id: int) -> Optional[list[discor
                 game_text += f" [{game.name}]({game_link})"
             else:
                 game_text += " " + game.name
+
+            # Add an asterisk if this game contains notes
+            if len(game.notes) > 0:
+                game_text += "\\*"
+
             price_text = generate_price_text(game)
             if price_text:
                 game_text += " " + price_text
