@@ -24,5 +24,9 @@ class InvalidArgumentException(BotException):
     pass
 
 
+class InvalidChannelException(BotException):
+    pass
+
+
 class ApiException(Exception):
     pass

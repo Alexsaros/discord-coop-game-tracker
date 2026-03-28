@@ -6,7 +6,7 @@ import asyncio
 import time
 import datetime
 from discord.ext import commands
-from discord.ext.commands import CommandInvokeError
+from discord.ext.commands import CommandInvokeError, guild_only, NoPrivateMessage
 from dotenv import load_dotenv
 from apscheduler.triggers.cron import CronTrigger
 import random
@@ -134,6 +134,7 @@ async def on_reaction_add(reaction, user):
         await message.delete()
 
 
+@guild_only()
 @bot.command(name="update_prices", help="Retrieves the latest prices from Steam. Example: !update_prices.")
 async def update_prices(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -145,6 +146,7 @@ async def update_prices(ctx):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
 async def add_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -228,6 +230,7 @@ async def add_game(ctx, game_name):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="remove", help="Removes a game from the list. Example: !remove \"game name\".")
 async def remove_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -243,6 +246,7 @@ async def remove_game(ctx, game_name):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="finish", help="Marks a game as finished, moving it to the completed games list. Example: !finish \"game name\".")
 async def finish_game(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -278,6 +282,7 @@ async def finish_game(ctx, game_name):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="enjoyed", help="Rate how much you enjoyed a game, between 0-10. Example: !enjoyed \"game name\" 7.5. Default rating is 5.")
 async def enjoyed(ctx, game_name, score=5.0):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -304,6 +309,7 @@ async def enjoyed(ctx, game_name, score=5.0):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="hog", help=":boar:")
 async def hall_of_game(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -328,6 +334,7 @@ async def hall_of_game(ctx):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. Default vote is 5.")
 async def vote_game(ctx, game_name, score=5.0):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -354,6 +361,7 @@ async def vote_game(ctx, game_name, score=5.0):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="list", help="Displays a sorted list of all games. Example: !list.")
 async def list_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -391,6 +399,7 @@ async def list_games(ctx):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="play_without", help="Displays a sorted list of games that the given user rated low. Example: !play_without alexsaro. :cry:")
 async def play_without(ctx, username):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -412,6 +421,7 @@ async def play_without(ctx, username):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="owned_games", help="Displays a list of games that everyone has marked as owned. Example: !owned_games.")
 async def display_owned_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -423,6 +433,7 @@ async def display_owned_games(ctx):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="edit", help="Displays the given game as a message to be able edit it using its reactions. Example: !edit \"game name\".")
 async def edit(ctx, game_name):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -437,13 +448,10 @@ async def edit(ctx, game_name):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="unvoted", help="Shows you which games you haven't voted on yet. Example: !unvoted.")
 async def unvoted(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
-
-    if ctx.guild is None:
-        await ctx.send(f"This command can only be run in a server.")
-        return
 
     unvoted_games = UnvotedGames(bot, ctx.guild, ctx.author)
     await unvoted_games.send_message()
@@ -451,6 +459,7 @@ async def unvoted(ctx):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="add_note", help="Adds an informative note to a game. Example: !add_note \"game name\" \"PvP only\".")
 async def add_note(ctx, game_name, note_text):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -465,6 +474,7 @@ async def add_note(ctx, game_name, note_text):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="remove_note", help="Removes a note from a game. Example: !remove_note \"game name\" \"PvP only\".")
 async def remove_note(ctx, game_name, note_text):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -483,6 +493,7 @@ async def remove_note(ctx, game_name, note_text):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="own", help="Sets whether you own a game or not. Example: !own \"game name\" no. Defaults to \"yes\".")
 async def own(ctx, game_name, owns_game="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -506,6 +517,7 @@ async def own(ctx, game_name, owns_game="yes"):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="players", help="Sets with how many players a game can be played, ranging from 1-4. Example: !players \"game name\" 4.")
 async def players(ctx, game_name, player_count):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -527,6 +539,7 @@ async def players(ctx, game_name, player_count):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="local", help="Sets whether a game can be played together with one copy. Example: !local \"game name\" no. Defaults to \"yes\".")
 async def set_local(ctx, game_name, is_local="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -543,6 +556,7 @@ async def set_local(ctx, game_name, is_local="yes"):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="played", help="Sets whether you have played a game before or not. Example: !played \"game name\" no. Defaults to \"yes\".")
 async def set_played(ctx, game_name, played_before="yes"):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -564,6 +578,7 @@ async def set_played(ctx, game_name, played_before="yes"):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="steam_id", help="Links a game to a steam ID for the purpose of retrieving prices. Example: !steam_id \"game name\" 105600.")
 async def set_steam_id(ctx, game_name, steam_id):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -588,6 +603,7 @@ async def set_steam_id(ctx, game_name, steam_id):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="alias", help="Sets an alias for yourself, to be displayed in the overview. Example: !alias :sunglasses:. Leave empty to clear it.")
 async def set_alias(ctx, new_alias=None):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -603,6 +619,7 @@ async def set_alias(ctx, new_alias=None):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="rename", help="Change the name of a game. Example: !rename \"game name\" \"new game name\".")
 async def rename_game(ctx, game_name, new_game_name):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -617,6 +634,7 @@ async def rename_game(ctx, game_name, new_game_name):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="affinity", help="Shows how similarly you vote to other people. Example: !affinity.")
 async def show_affinity(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -640,6 +658,7 @@ async def send_me_free_games(ctx, notify_on_free_game="yes"):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="link_steam", help="Link your Steam account to automatically fetch owned and played games. Accepts a Steam profile ID or custom URL ID. Example: !link_steam 76561198071149263.")
 async def link_steam_account(ctx, steam_profile_id):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -665,6 +684,7 @@ async def link_steam_account(ctx, steam_profile_id):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="bedtime", help="Sets a reminder for your bedtime (CET). Example: !bedtime 21:30.")
 async def set_bedtime(ctx, bedtime_time):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -698,6 +718,7 @@ async def horoscope(ctx):
     await delete_message(ctx.message)
 
 
+@guild_only()
 @bot.command(name="kick", help="Kicks a member from the server. Example: !kick \"member name\".")
 async def kick(ctx, member_name):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -726,6 +747,7 @@ async def kick(ctx, member_name):
             return
 
 
+@guild_only()
 @bot.command(name="view")
 async def view(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
@@ -825,6 +847,11 @@ async def on_command_error(ctx, error):
             log(error.original.message)
             await ctx.send(error.original.message)
             return
+
+    # Check if the user tried to use a server command in a DM channel
+    if isinstance(error, NoPrivateMessage):
+        await ctx.send("This command can only be used in a server.")
+        return
 
     log("\nEncountered command error:")
     log(error)
