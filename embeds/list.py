@@ -78,23 +78,6 @@ async def generate_list_embeds(bot: Bot, server_id: int) -> Optional[list[discor
 
         games_list = []     # type: list[str]
         for game, score in sorted_games:
-            # Get everyone who hasn't voted yet
-            non_voters_ids = [member.user_id for member in members]
-
-            voters_ids = (
-                db_session.query(GameUserData.user_id)
-                    .filter(GameUserData.server_id == server_id)
-                    .filter(GameUserData.game_id == game.id)
-                    .filter(GameUserData.vote.isnot(None))
-                    .all()
-            )  # type: list[tuple[int]]
-            voters_ids = [voter_id[0] for voter_id in voters_ids]   # type: list[int]
-
-            for voter_id in voters_ids:
-                if voter_id in non_voters_ids:
-                    non_voters_ids.remove(voter_id)
-            non_voters_text = get_users_aliases_string(server_id, non_voters_ids)
-
             game_text = f"{game.id} -"
             if game.steam_id is not None:
                 game_link = "https://store.steampowered.com/app/" + str(game.steam_id)
@@ -109,8 +92,6 @@ async def generate_list_embeds(bot: Bot, server_id: int) -> Optional[list[discor
             price_text = generate_price_text(game)
             if price_text:
                 game_text += " " + price_text
-            if non_voters_text:
-                game_text += " " + non_voters_text
 
             games_list.append(game_text)
 
