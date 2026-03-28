@@ -13,6 +13,53 @@ from shared.embed_pagination import paginate_embed_description
 LIST_EMBED_COLOR = discord.Color.blurple()
 
 
+def generate_unvoted_embed(server_id: int) -> Optional[discord.Embed]:
+    with db_session_scope() as db_session:
+        games = (
+            db_session.query(Game)
+                .filter(Game.server_id == server_id)
+                .filter(Game.finished.is_(False))
+                .all()
+        )  # type: list[Game]
+
+        members = get_server_members(server_id)
+        member_ids = [member.user_id for member in members]
+
+        unvoted_games_map = {}  # type: dict[int, list[Game]]
+        for game in games:
+            game_user_data_votes = (
+                db_session.query(GameUserData)
+                    .filter(GameUserData.server_id == server_id)
+                    .filter(GameUserData.game_id == game.id)
+                    .filter(GameUserData.vote.isnot(None))
+                    .all()
+            )  # type: list[GameUserData]
+
+            voter_ids = [game_user_data.user_id for game_user_data in game_user_data_votes]
+            non_voters = list(set(member_ids) - set(voter_ids))
+            non_voters.sort()
+
+            for non_voter in non_voters:
+                if non_voter not in unvoted_games_map:
+                    unvoted_games_map[non_voter] = []
+                unvoted_games_map[non_voter].append(game)
+
+    if len(unvoted_games_map) == 0:
+        return None
+
+    unvoted_counts = []
+    for user_id, unvoted_games in unvoted_games_map.items():
+        alias = get_users_aliases_string(server_id, [user_id])
+        unvoted_counts.append(f"{alias}: {len(unvoted_games)}")
+
+    description = ", ".join(unvoted_counts)
+    return discord.Embed(
+        title="Amount of games not yet voted on",
+        description=description,
+        color=LIST_EMBED_COLOR
+    )
+
+
 async def generate_list_embeds(bot: Bot, server_id: int) -> Optional[list[discord.Embed]]:
     guild = await get_discord_guild_object(bot, server_id)
     if guild is None:

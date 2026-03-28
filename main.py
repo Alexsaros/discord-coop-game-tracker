@@ -21,7 +21,7 @@ from database.utils import get_game, get_user_by_name
 from embeds.affinity import generate_affinity_embed
 from embeds.edit_game import EditGame
 from embeds.hall_of_game import generate_hog_embed
-from embeds.list import generate_list_embeds
+from embeds.list import generate_list_embeds, generate_unvoted_embed
 from embeds.owned_games import generate_owned_games_embed
 from embeds.play_without import generate_play_without_embed
 from embeds.unvoted_games import UnvotedGames
@@ -371,11 +371,15 @@ async def list_games(ctx):
     if list_embed is None:
         await ctx.send("No games registered for this server yet.")
         return
+    embeds = [list_embed]
+    unvoted_embed = generate_unvoted_embed(server_id)
+    if unvoted_embed is not None:
+        embeds.append(unvoted_embed)
 
     # Remove the buttons from the old list message
     list_message_old = await get_live_message_object(bot, server_id, LiveMessageType.LIST)
     if list_message_old is not None:
-        await list_message_old.edit(embed=list_embed, view=None)
+        await list_message_old.edit(embeds=embeds, view=None)
 
         with db_session_scope() as db_session:
             # Delete the old list message from the database
@@ -383,9 +387,9 @@ async def list_games(ctx):
             if list_live_message_old is not None:
                 db_session.delete(list_live_message_old)
 
-    list_message = await ctx.send(embed=list_embed)
+    list_message = await ctx.send(embeds=embeds)
     page_buttons_view = PageButtonsView(bot, list_embed.title, list_message.id, update_list, server_id)
-    await list_message.edit(embed=list_embed, view=page_buttons_view)
+    await list_message.edit(embeds=embeds, view=page_buttons_view)
 
     with db_session_scope() as db_session:
         list_live_message = LiveMessage(
