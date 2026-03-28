@@ -17,13 +17,14 @@ from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam
 from apis.steam_web import get_steam_user_id, get_owned_steam_games, update_database_games_with_steam_user_data, \
     update_database_game_user_data
 from database.backup_service import create_backup
-from database.utils import get_game
+from database.utils import get_game, get_user_by_name
 from embeds.affinity import generate_affinity_embed
 from embeds.edit_game import EditGame
 from embeds.hall_of_game import generate_hog_embed
 from embeds.list import generate_list_embeds
 from embeds.owned_games import generate_owned_games_embed
 from embeds.play_without import generate_play_without_embed
+from libraries.critters.critters import start_critters_game
 from services.bedtime import load_bedtime_scheduler_jobs
 from services.help import CustomHelpCommand
 from shared import error_reporter
@@ -763,6 +764,17 @@ async def roll_dice(ctx, expression):
     message_text = dice_roller.roll_dice(username, expression)
 
     await ctx.send(message_text)
+    await delete_message(ctx.message)
+
+
+@bot.command(name="critters", help="Start a Critters game against someone. Example: !critters alexsaro.")
+async def critters(ctx, username: str):
+    log(f"{ctx.author}: {ctx.message.content}")
+    user_id = ctx.author.id
+
+    opponent_user = get_user_by_name(username)
+    await start_critters_game(bot, user_id, opponent_user.id)
+
     await delete_message(ctx.message)
 
 
