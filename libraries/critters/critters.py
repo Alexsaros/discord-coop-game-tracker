@@ -330,6 +330,16 @@ async def start_critters_game(bot: Bot, user_id: int, opponent_user_id: int):
         else:
             text = f"{user1.global_name} has challenged you to a Critters battle!"
 
+        file_info = discord.File(
+            os.path.join(CRITTERS_DIR, "resources/critters_info.webp"),
+            filename="info.webp"
+        )
+
+        await dm.send(
+            content="Critters rules",
+            file=file_info
+        )
+
         msg = await dm.send(
             content=text,
             file=file,

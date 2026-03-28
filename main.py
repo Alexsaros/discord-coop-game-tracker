@@ -773,6 +773,10 @@ async def critters(ctx, username: str):
     user_id = ctx.author.id
 
     opponent_user = get_user_by_name(username)
+    if opponent_user.id == user_id:
+        await ctx.send("You can't play against yourself!")
+        return
+
     await start_critters_game(bot, user_id, opponent_user.id)
 
     await delete_message(ctx.message)
