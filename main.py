@@ -24,6 +24,7 @@ from embeds.hall_of_game import generate_hog_embed
 from embeds.list import generate_list_embeds
 from embeds.owned_games import generate_owned_games_embed
 from embeds.play_without import generate_play_without_embed
+from embeds.unvoted_games import UnvotedGames
 from libraries.critters.critters import start_critters_game
 from services.bedtime import load_bedtime_scheduler_jobs
 from services.help import CustomHelpCommand
@@ -432,6 +433,20 @@ async def edit(ctx, game_name):
 
     edit_game = EditGame(bot, game.server_id, game.id, ctx.channel.id)
     await edit_game.send_message()
+
+    await delete_message(ctx.message)
+
+
+@bot.command(name="unvoted", help="Shows you which games you haven't voted on yet. Example: !unvoted.")
+async def unvoted(ctx):
+    log(f"{ctx.author}: {ctx.message.content}")
+
+    if ctx.guild is None:
+        await ctx.send(f"This command can only be run in a server.")
+        return
+
+    unvoted_games = UnvotedGames(bot, ctx.guild, ctx.author)
+    await unvoted_games.send_message()
 
     await delete_message(ctx.message)
 
