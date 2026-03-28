@@ -767,17 +767,21 @@ async def roll_dice(ctx, expression):
     await delete_message(ctx.message)
 
 
-@bot.command(name="critters", help="Start a Critters game against someone. Example: !critters alexsaro.")
-async def critters(ctx, username: str):
+@bot.command(name="critters", help="Start a Critters game against another user or against Cooper (by not giving a username). Example: !critters alexsaro.")
+async def critters(ctx, username: str = None):
     log(f"{ctx.author}: {ctx.message.content}")
     user_id = ctx.author.id
 
-    opponent_user = get_user_by_name(username)
-    if opponent_user.id == user_id:
-        await ctx.send("You can't play against yourself!")
-        return
+    opponent_user_id = None
+    if username is not None:
+        opponent_user = get_user_by_name(username)
+        if opponent_user.id == user_id:
+            await ctx.send("You can't play against yourself!")
+            return
 
-    await start_critters_game(bot, user_id, opponent_user.id)
+        opponent_user_id = opponent_user.id
+
+    await start_critters_game(bot, user_id, opponent_user_id)
 
     await delete_message(ctx.message)
 

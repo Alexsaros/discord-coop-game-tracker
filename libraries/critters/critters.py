@@ -2,6 +2,7 @@ import asyncio
 import io
 import os
 import random
+from typing import Optional
 
 import discord
 from discord.ext.commands import Bot
@@ -10,6 +11,8 @@ from PIL import Image
 
 from apis.discord import get_discord_user
 
+
+COOPER_ID = -1
 
 CARDS = ["mouse", "elephant", "wolf", "cat"]
 
@@ -71,14 +74,15 @@ def get_winner(a, b):
 
 
 class CrittersGame:
-    def __init__(self, bot: Bot, user1: discord.User, user2: discord.User):
+    def __init__(self, bot: Bot, user1: discord.User, user2: Optional[discord.User]):
         self.bot = bot
-        user_id1, user_id2 = user1.id, user2.id
+        user_id1 = user1.id
+        user_id2 = user2.id if user2 is not None else COOPER_ID
         self.players = [user_id1, user_id2]
 
         self.user_map = {
-            user1.id: user1,
-            user2.id: user2
+            user_id1: user1,
+            user_id2: user2
         }
 
         self.hands = {
@@ -95,6 +99,9 @@ class CrittersGame:
 
         self.rematch_started = False
 
+        if user_id2 == COOPER_ID:
+            self.ai_play()
+
     def play_card(self, user_id: int, card: str):
         if user_id in self.choices:
             return False
@@ -103,6 +110,16 @@ class CrittersGame:
         self.hands[user_id].remove(card)
         self.hands[user_id].append(random.choice(CARDS))
         return True
+
+    def ai_play(self):
+        if COOPER_ID in self.choices:
+            return
+
+        card = ai_choose_card(self)
+
+        self.choices[COOPER_ID] = card
+        self.hands[COOPER_ID].remove(card)
+        self.hands[COOPER_ID].append(random.choice(CARDS))
 
     def resolve_round(self):
         p1, p2 = self.players
@@ -118,6 +135,9 @@ class CrittersGame:
         self.round += 1
         self.history.append((c1, c2))
         self.choices = {}
+
+        if p2 == COOPER_ID:
+            self.ai_play()
 
     def is_round_ready(self):
         return len(self.choices) == 2
@@ -204,6 +224,8 @@ class CrittersView(View):
         tasks = []
 
         for user_id in self.game.players:
+            if user_id == COOPER_ID:
+                continue
             msg = self.game.messages[user_id]
             view = CrittersView(self.game, user_id)
 
@@ -221,9 +243,16 @@ class CrittersView(View):
         )
 
 
+def ai_choose_card(game: CrittersGame):
+    hand = game.hands[COOPER_ID]
+
+    return random.choice(hand)
+
+
 def get_status_text(game: CrittersGame, user_id: int):
     opponent_id = [p for p in game.players if p != user_id][0]
     opponent = game.user_map[opponent_id]
+    opponent_name = opponent.global_name if opponent is not None else "Cooper"
 
     if game.is_finished():
         my_score = game.scores[user_id]
@@ -236,9 +265,9 @@ def get_status_text(game: CrittersGame, user_id: int):
         else:
             result = "It's a draw!"
 
-        return f"Game over vs {opponent.global_name} - {result} ({my_score}-{opp_score})"
+        return f"Game over vs {opponent_name} - {result} ({my_score}-{opp_score})"
 
-    return f"Round {game.round} vs {opponent.global_name}"
+    return f"Round {game.round} vs {opponent_name}"
 
 
 def get_positions():
@@ -312,13 +341,16 @@ async def render_game(game: CrittersGame, user_id: int) -> discord.File:
     return discord.File(buffer, filename="game.png")
 
 
-async def start_critters_game(bot: Bot, user_id: int, opponent_user_id: int):
+async def start_critters_game(bot: Bot, user_id: int, opponent_user_id: Optional[int]):
     user1 = await get_discord_user(bot, user_id)
-    user2 = await get_discord_user(bot, opponent_user_id)
+    user2 = None if opponent_user_id in [None, COOPER_ID] else await get_discord_user(bot, opponent_user_id)
 
     game = CrittersGame(bot, user1, user2)
 
     for user_id in game.players:
+        if user_id == COOPER_ID:
+            continue
+
         discord_user = await get_discord_user(bot, user_id)
         dm = await discord_user.create_dm()
 
@@ -326,7 +358,8 @@ async def start_critters_game(bot: Bot, user_id: int, opponent_user_id: int):
         file = await render_game(game, user_id)
 
         if user_id == game.players[0]:
-            text = f"You have challenged {user2.global_name} to a Critters battle!"
+            opponent_name = user2.global_name if user2 is not None else "Cooper"
+            text = f"You have challenged {opponent_name} to a Critters battle!"
         else:
             text = f"{user1.global_name} has challenged you to a Critters battle!"
 
