@@ -7,7 +7,7 @@ from apis.discord import get_discord_guild_object
 from database.db import db_session_scope
 from database.models import Game, GameUserData
 from database.utils import get_server_members
-from embeds.utils import get_users_aliases_string, generate_price_text, sort_games_by_score
+from embeds.utils import get_users_aliases_string, generate_price_text, sort_games_by_score, EMOJIS
 from shared.embed_pagination import paginate_embed_description
 
 LIST_EMBED_COLOR = discord.Color.blurple()
@@ -79,6 +79,14 @@ async def generate_list_embeds(bot: Bot, server_id: int) -> Optional[list[discor
         games_list = []     # type: list[str]
         for game, score in sorted_games:
             game_text = f"{game.id} -"
+
+            # Add an emoji indicating how many players the game supports
+            if game.player_count:
+                player_count = min(4, game.player_count)
+                game_text += EMOJIS[f"{player_count}players"]
+            else:
+                game_text += EMOJIS["question"]
+
             if game.steam_id is not None:
                 game_link = "https://store.steampowered.com/app/" + str(game.steam_id)
                 game_text += f" [{game.name}]({game_link})"

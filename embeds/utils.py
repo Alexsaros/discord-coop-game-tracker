@@ -14,6 +14,7 @@ EMOJIS = {
     "local": ":satellite:",
     "experienced": ":brain:",
     "new": ":new:",
+    "question": ":question:",
 }
 
 
@@ -132,7 +133,8 @@ def get_game_embed_field(game: Game):
         description += voters_text
 
     if game.player_count is not None:
-        player_count_text = EMOJIS[f"{game.player_count}players"]
+        player_count = min(4, game.player_count)
+        player_count_text = EMOJIS[f"{player_count}players"]
         description += f"\n> Players: {player_count_text}"
 
     # Do not display who owns a game if the game is free, as you can't buy a free game
