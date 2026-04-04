@@ -219,6 +219,8 @@ async def add_game(ctx, game_name):
                 game.player_count = multiplayer_info.max_players_online
             if multiplayer_info.max_players_offline > 0:
                 game.local = True
+                if multiplayer_info.max_players_online == 0:
+                    game.player_count = multiplayer_info.max_players_offline
             if multiplayer_info.campaign_coop is False:
                 if game.notes is None:
                     game.notes = []
