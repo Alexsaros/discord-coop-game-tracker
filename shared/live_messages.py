@@ -11,7 +11,7 @@ from embeds.list import generate_list_embeds, generate_unvoted_embed
 from embeds.utils import get_current_page_from_message_title
 from shared.error_reporter import send_error_message
 from shared.logger import log
-from embeds.page_buttons_view import PageButtonsView
+from embeds.list_view import ListView
 
 
 async def get_live_message_object(bot: Bot, server_id: int, message_type: LiveMessageType) -> Optional[discord.Message]:
@@ -56,7 +56,18 @@ async def update_list(bot: Bot, server_id: int, page_number: int = None) -> None
     if list_message is None:
         return
 
-    list_embeds = (await generate_list_embeds(bot, server_id))
+    with db_session_scope() as db_session:
+        live_message = (
+            db_session.query(LiveMessage)
+                .filter(LiveMessage.server_id == server_id)
+                .filter(LiveMessage.message_type == LiveMessageType.LIST)
+                .first()
+        )   # type: LiveMessage
+        if live_message is None:
+            await send_error_message(bot, "update_list() has a list_message Discord message but suddenly can't find it in the database.")
+            return None
+
+    list_embeds = (await generate_list_embeds(bot, server_id, live_message.selected_user_ids))
     if page_number is None:
         current_page = get_current_page_from_message_title(list_message.embeds[0].title)
         page_number = min(current_page, len(list_embeds))
@@ -69,9 +80,9 @@ async def update_list(bot: Bot, server_id: int, page_number: int = None) -> None
             if unvoted_embed is not None:
                 embeds.append(unvoted_embed)
 
-            page_buttons_view = PageButtonsView(bot, updated_list_embed.title, list_message.id, update_list, server_id)
+            list_view = ListView(bot, updated_list_embed.title, list_message.id, update_list, server_id)
 
-            await list_message.edit(embeds=embeds, view=page_buttons_view)
+            await list_message.edit(embeds=embeds, view=list_view)
     except Exception as e:
         await send_error_message(bot, e)
 
@@ -114,4 +125,4 @@ async def load_list_views(bot: Bot):
     for list_message in list_messages:
         list_message_obj = await get_live_message_object(bot, list_message.server_id, LiveMessageType.LIST)
         if list_message_obj is not None:
-            bot.add_view(PageButtonsView(bot, list_message_obj.embeds[0].title, list_message_obj.id, update_list, list_message.server_id))
+            bot.add_view(ListView(bot, list_message_obj.embeds[0].title, list_message_obj.id, update_list, list_message.server_id))

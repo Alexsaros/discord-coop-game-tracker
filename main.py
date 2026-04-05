@@ -17,11 +17,12 @@ from apis.steam import get_steam_game_price, get_steam_game_banner, search_steam
 from apis.steam_web import get_steam_user_id, get_owned_steam_games, update_database_games_with_steam_user_data, \
     update_database_game_user_data
 from database.backup_service import create_backup
-from database.utils import get_game, get_user_by_name
+from database.utils import get_game, get_user_by_name, get_server_members
 from embeds.affinity import generate_affinity_embed
 from embeds.edit_game import EditGame
 from embeds.hall_of_game import generate_hog_embed
 from embeds.list import generate_list_embeds, generate_unvoted_embed
+from embeds.list_view import ListView
 from embeds.owned_games import generate_owned_games_embed
 from embeds.play_without import generate_play_without_embed
 from embeds.unvoted_games import UnvotedGames
@@ -369,7 +370,9 @@ async def list_games(ctx):
     log(f"{ctx.author}: {ctx.message.content}")
     server_id = ctx.guild.id
 
-    list_embed = (await generate_list_embeds(bot, server_id))[0]
+    user_ids = [member.user_id for member in get_server_members(server_id)]
+
+    list_embed = (await generate_list_embeds(bot, server_id, user_ids))[0]
     if list_embed is None:
         await ctx.send("No games registered for this server yet.")
         return
@@ -390,8 +393,8 @@ async def list_games(ctx):
                 db_session.delete(list_live_message_old)
 
     list_message = await ctx.send(embeds=embeds)
-    page_buttons_view = PageButtonsView(bot, list_embed.title, list_message.id, update_list, server_id)
-    await list_message.edit(embeds=embeds, view=page_buttons_view)
+    list_view = ListView(bot, list_embed.title, list_message.id, update_list, server_id)
+    await list_message.edit(embeds=embeds, view=list_view)
 
     with db_session_scope() as db_session:
         list_live_message = LiveMessage(
@@ -399,6 +402,7 @@ async def list_games(ctx):
             channel_id=list_message.channel.id,
             message_id=list_message.id,
             message_type=LiveMessageType.LIST,
+            selected_user_ids=user_ids
         )
         db_session.add(list_live_message)
 

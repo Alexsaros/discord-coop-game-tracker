@@ -60,10 +60,18 @@ def generate_unvoted_embed(server_id: int) -> Optional[discord.Embed]:
     )
 
 
-async def generate_list_embeds(bot: Bot, server_id: int) -> Optional[list[discord.Embed]]:
+async def generate_list_embeds(bot: Bot, server_id: int, user_ids: list[int]) -> Optional[list[discord.Embed]]:
     guild = await get_discord_guild_object(bot, server_id)
     if guild is None:
         return None
+
+    if len(user_ids) == 0:
+        return [discord.Embed(
+            title="Games list",
+            description="No users selected.",
+            color=LIST_EMBED_COLOR
+        )]
+    # TODO: use given user_ids to determine which games to list
 
     with db_session_scope() as db_session:
         games = (
