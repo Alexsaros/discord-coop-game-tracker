@@ -103,7 +103,7 @@ async def generate_list_embeds(bot: Bot, server_id: int) -> Optional[list[discor
 
             games_list.append(game_text)
 
-        title_text = "Games list (shows non-voters)"
+        title_text = "Games list"
         games_list_text = "\n".join(games_list)
 
         list_embed = discord.Embed(
