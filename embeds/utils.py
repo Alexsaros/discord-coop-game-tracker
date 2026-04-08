@@ -18,6 +18,11 @@ EMOJIS = {
 }
 
 
+# Thresholds for ratings on whether someone is okay with missing out on playing a game or not (inclusive)
+ALWAYS_WANT_TO_PLAY_RATING_THRESHOLD = 8    # or higher
+NEVER_WANT_TO_PLAY_RATING_THRESHOLD = 3     # or lower
+
+
 def sort_games_by_score(games: list[Game], member_count: int) -> list[tuple[Game, int]]:
     game_scores = []
 
@@ -40,6 +45,87 @@ def sort_games_by_score(games: list[Game], member_count: int) -> list[tuple[Game
         # Use a score of 5 for the non-voters
         non_voter_count = member_count - len(votes)
         total_score += non_voter_count * 5
+
+        game_scores.append((game, total_score))
+
+    return sorted(game_scores, key=lambda x: x[1], reverse=True)
+
+
+def filter_games_by_selected_users(games: list[Game], selected_user_ids: list[int], excluded_user_ids: list[int]) -> list[Game]:
+    filtered_games = []
+
+    for game in games:
+        # Only show games that can be played with the amount of selected players
+        if game.player_count is not None and \
+                len(selected_user_ids) > game.player_count and \
+                len(selected_user_ids) % game.player_count != 0:
+            # This game supports less players than desired, and can not be split evenly into multiple parties
+            continue
+
+        with db_session_scope() as db_session:
+            game_user_data_list = (
+                db_session.query(GameUserData)
+                    .filter(GameUserData.server_id == game.server_id)
+                    .filter(GameUserData.game_id == game.id)
+                    .filter(GameUserData.vote.isnot(None))
+                    .all()
+            )  # type: list[GameUserData]
+
+            skip_game = False
+
+            # TODO check for situation: 2 player game, 2 selected users want to play, 2 missing users too, should be fine
+            # Check whether to skip a game based on someone (not) wanting to play it
+            for user_data in game_user_data_list:
+                # Skip this game if a selected user does not want to play it
+                if user_data.user_id in selected_user_ids and user_data.vote <= NEVER_WANT_TO_PLAY_RATING_THRESHOLD:
+                    skip_game = True
+                    break
+                # Skip this game if an excluded user really wants to play it
+                if user_data.user_id in excluded_user_ids and user_data.vote >= ALWAYS_WANT_TO_PLAY_RATING_THRESHOLD:
+                    skip_game = True
+                    break
+
+            if skip_game:
+                continue
+
+            filtered_games.append(game)
+
+    return filtered_games
+
+
+def sort_games_by_score_and_selected_users(games: list[Game], selected_user_ids: list[int], excluded_user_ids: list[int]) -> list[tuple[Game, int]]:
+    game_scores = []
+    total_member_count = len(selected_user_ids) + len(excluded_user_ids)
+    # A user's vote who is excluded weighs more heavily
+    excluded_user_vote_weight = total_member_count
+
+    for game in games:
+        with db_session_scope() as db_session:
+            game_user_data_votes = (
+                db_session.query(GameUserData)
+                    .filter(GameUserData.server_id == game.server_id)
+                    .filter(GameUserData.game_id == game.id)
+                    .filter(GameUserData.vote.isnot(None))
+                    .all()
+            )  # type: list[GameUserData]
+
+        voter_user_ids = set(user_data.user_id for user_data in game_user_data_votes)
+        non_voter_user_ids = set(selected_user_ids + excluded_user_ids) - voter_user_ids
+
+        # Count the score for this game
+        total_score = 0
+        for data in game_user_data_votes:
+            if data.user_id in selected_user_ids:
+                total_score += data.vote
+            elif data.user_id in excluded_user_ids:
+                total_score -= data.vote * excluded_user_vote_weight
+
+        # Use a score of 5 for the non-voters
+        for user_id in non_voter_user_ids:
+            if user_id in selected_user_ids:
+                total_score += 5
+            elif user_id in excluded_user_ids:
+                total_score -= 5 * excluded_user_vote_weight
 
         game_scores.append((game, total_score))
 

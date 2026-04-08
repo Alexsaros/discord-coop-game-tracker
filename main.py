@@ -24,7 +24,6 @@ from embeds.hall_of_game import generate_hog_embed
 from embeds.list import generate_list_embeds, generate_unvoted_embed
 from embeds.list_view import ListView
 from embeds.owned_games import generate_owned_games_embed
-from embeds.play_without import generate_play_without_embed
 from embeds.unvoted_games import UnvotedGames
 from libraries.critters.critters import start_critters_game
 from services.bedtime import load_bedtime_scheduler_jobs
@@ -406,28 +405,6 @@ async def list_games(ctx):
         )
         db_session.add(list_live_message)
 
-    await delete_message(ctx.message)
-
-
-@guild_only()
-@bot.command(name="play_without", help="Displays a sorted list of games that the given user rated low. Example: !play_without alexsaro. :cry:")
-async def play_without(ctx, username):
-    log(f"{ctx.author}: {ctx.message.content}")
-    server_id = ctx.guild.id
-
-    with db_session_scope() as db_session:
-        user = (
-            db_session.query(User)
-                .filter(User.global_name.ilike(username))
-                .first()
-        )   # type: User
-        if user is None:
-            await ctx.send(f"Could not find user named \"{username}\".")
-            return
-
-    play_without_embed = generate_play_without_embed(server_id, user)
-
-    await ctx.send(embed=play_without_embed)
     await delete_message(ctx.message)
 
 

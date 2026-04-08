@@ -7,7 +7,8 @@ from apis.discord import get_discord_guild_object
 from database.db import db_session_scope
 from database.models import Game, GameUserData
 from database.utils import get_server_members
-from embeds.utils import get_users_aliases_string, generate_price_text, sort_games_by_score, EMOJIS
+from embeds.utils import get_users_aliases_string, generate_price_text, EMOJIS, \
+    sort_games_by_score_and_selected_users, filter_games_by_selected_users
 from shared.embed_pagination import paginate_embed_description
 
 LIST_EMBED_COLOR = discord.Color.blurple()
@@ -60,18 +61,17 @@ def generate_unvoted_embed(server_id: int) -> Optional[discord.Embed]:
     )
 
 
-async def generate_list_embeds(bot: Bot, server_id: int, user_ids: list[int]) -> Optional[list[discord.Embed]]:
+async def generate_list_embeds(bot: Bot, server_id: int, selected_user_ids: list[int]) -> Optional[list[discord.Embed]]:
     guild = await get_discord_guild_object(bot, server_id)
     if guild is None:
         return None
 
-    if len(user_ids) == 0:
+    if len(selected_user_ids) == 0:
         return [discord.Embed(
             title="Games list",
-            description="No users selected.",
+            description="No users selected.",   # TODO show all (unfiltered) games
             color=LIST_EMBED_COLOR
         )]
-    # TODO: use given user_ids to determine which games to list
 
     with db_session_scope() as db_session:
         games = (
@@ -82,7 +82,10 @@ async def generate_list_embeds(bot: Bot, server_id: int, user_ids: list[int]) ->
         )   # type: list[Game]
 
         members = get_server_members(server_id)
-        sorted_games = sort_games_by_score(games, len(members))
+        excluded_user_ids = [member.user_id for member in members if member.user_id not in selected_user_ids]
+
+        filtered_games = filter_games_by_selected_users(games, selected_user_ids, excluded_user_ids)
+        sorted_games = sort_games_by_score_and_selected_users(filtered_games, selected_user_ids, excluded_user_ids)
 
         games_list = []     # type: list[str]
         for game, score in sorted_games:
