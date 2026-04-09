@@ -371,6 +371,17 @@ async def list_games(ctx):
 
     user_ids = [member.user_id for member in get_server_members(server_id)]
 
+    # Remove the buttons from the old list message
+    list_message_old = await get_live_message_object(bot, server_id, LiveMessageType.LIST)
+    if list_message_old is not None:
+        await list_message_old.edit(view=None)
+
+        with db_session_scope() as db_session:
+            # Delete the old list message from the database
+            list_live_message_old = db_session.get(LiveMessage, list_message_old.id)    # type: LiveMessage
+            if list_live_message_old is not None:
+                db_session.delete(list_live_message_old)
+
     list_embed = (await generate_list_embeds(bot, server_id, user_ids))[0]
     if list_embed is None:
         await ctx.send("No games registered for this server yet.")
@@ -382,17 +393,6 @@ async def list_games(ctx):
     unvoted_embed = generate_unvoted_embed(server_id)
     if unvoted_embed is not None:
         embeds.append(unvoted_embed)
-
-    # Remove the buttons from the old list message
-    list_message_old = await get_live_message_object(bot, server_id, LiveMessageType.LIST)
-    if list_message_old is not None:
-        await list_message_old.edit(embeds=embeds, view=None)
-
-        with db_session_scope() as db_session:
-            # Delete the old list message from the database
-            list_live_message_old = db_session.get(LiveMessage, list_message_old.id)    # type: LiveMessage
-            if list_live_message_old is not None:
-                db_session.delete(list_live_message_old)
 
     list_message = await ctx.send(embeds=embeds)
     list_view = ListView(bot, list_embed.title, list_message.id, update_list, server_id)
