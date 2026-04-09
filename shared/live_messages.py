@@ -7,7 +7,7 @@ from apis.discord import get_discord_guild_object
 from database.db import db_session_scope
 from database.models import LiveMessageType, LiveMessage, Server
 from embeds.hall_of_game import generate_hog_embed
-from embeds.list import generate_list_embeds, generate_unvoted_embed
+from embeds.list import generate_list_embeds, generate_unvoted_embed, generate_filter_embed
 from embeds.utils import get_current_page_from_message_title
 from shared.error_reporter import send_error_message
 from shared.logger import log
@@ -76,6 +76,9 @@ async def update_list(bot: Bot, server_id: int, page_number: int = None) -> None
     try:
         if updated_list_embed is not None:
             embeds = [updated_list_embed]
+            filter_embed = generate_filter_embed(server_id)
+            if filter_embed is not None:
+                embeds.append(filter_embed)
             unvoted_embed = generate_unvoted_embed(server_id)
             if unvoted_embed is not None:
                 embeds.append(unvoted_embed)

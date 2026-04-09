@@ -73,7 +73,6 @@ def filter_games_by_selected_users(games: list[Game], selected_user_ids: list[in
 
             skip_game = False
 
-            # TODO check for situation: 2 player game, 2 selected users want to play, 2 missing users too, should be fine
             # Check whether to skip a game based on someone (not) wanting to play it
             for user_data in game_user_data_list:
                 # Skip this game if a selected user does not want to play it

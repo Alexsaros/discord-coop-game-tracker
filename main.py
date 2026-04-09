@@ -21,7 +21,7 @@ from database.utils import get_game, get_user_by_name, get_server_members
 from embeds.affinity import generate_affinity_embed
 from embeds.edit_game import EditGame
 from embeds.hall_of_game import generate_hog_embed
-from embeds.list import generate_list_embeds, generate_unvoted_embed
+from embeds.list import generate_list_embeds, generate_unvoted_embed, generate_filter_embed
 from embeds.list_view import ListView
 from embeds.owned_games import generate_owned_games_embed
 from embeds.unvoted_games import UnvotedGames
@@ -376,6 +376,9 @@ async def list_games(ctx):
         await ctx.send("No games registered for this server yet.")
         return
     embeds = [list_embed]
+    filter_embed = generate_filter_embed(server_id)
+    if filter_embed is not None:
+        embeds.append(filter_embed)
     unvoted_embed = generate_unvoted_embed(server_id)
     if unvoted_embed is not None:
         embeds.append(unvoted_embed)

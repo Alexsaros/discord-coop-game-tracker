@@ -5,7 +5,7 @@ from discord.ext.commands import Bot
 
 from apis.discord import get_discord_guild_object
 from database.db import db_session_scope
-from database.models import Game, GameUserData
+from database.models import Game, GameUserData, LiveMessageType, LiveMessage
 from database.utils import get_server_members
 from embeds.utils import get_users_aliases_string, generate_price_text, EMOJIS, \
     sort_games_by_score_and_selected_users, filter_games_by_selected_users
@@ -56,6 +56,38 @@ def generate_unvoted_embed(server_id: int) -> Optional[discord.Embed]:
     description = ", ".join(unvoted_counts)
     return discord.Embed(
         title="Amount of games not yet voted on",
+        description=description,
+        color=LIST_EMBED_COLOR
+    )
+
+
+def generate_filter_embed(server_id: int) -> Optional[discord.Embed]:
+    description = ""
+
+    with db_session_scope() as db_session:
+        list_message = (
+            db_session.query(LiveMessage)
+                .filter(LiveMessage.server_id == server_id)
+                .filter(LiveMessage.message_type == LiveMessageType.LIST)
+                .first()
+        )   # type: LiveMessage
+
+    if list_message is not None:
+        selected_user_ids = list_message.selected_user_ids
+    else:
+        members = get_server_members(server_id)
+        selected_user_ids = [member.user_id for member in members]
+
+    if len(selected_user_ids) > 0:
+        aliases = get_users_aliases_string(server_id, selected_user_ids)
+        description += f"\nSelected users: {aliases}"
+
+    description = description.strip()
+    if description == "":
+        return None
+
+    return discord.Embed(
+        title="Filters",
         description=description,
         color=LIST_EMBED_COLOR
     )
