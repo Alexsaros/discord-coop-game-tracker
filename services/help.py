@@ -26,3 +26,18 @@ class CustomHelpCommand(commands.DefaultHelpCommand):
 
         # Send the actual help message
         await super().send_bot_help(mapping)
+
+    def add_indented_commands(self, commands, *, heading, max_size=None):
+        if not commands:
+            return
+
+        self.paginator.add_line(f"{heading}")
+
+        max_size = max_size or self.get_max_size(commands)
+
+        for command in commands:
+            name = command.name
+            entry = f"{self.indent * ' '}{name:<{max_size}} {command.short_doc}"
+            self.paginator.add_line(entry)
+
+        self.paginator.add_line("")
