@@ -126,9 +126,8 @@ async def get_multiplayer_info_from_igdb(bot: Bot, game_name: str) -> Optional[M
             if "multiplayer_modes" in game:
                 return await api.get_multiplayer_info(game["multiplayer_modes"])
             elif len(game) != 0:
-                multiplayer_info = MultiplayerInfo()
-                multiplayer_info.max_players_offline = 1
-                return multiplayer_info
+                # Game does not have multiplayer info (either single player or just not known)
+                return MultiplayerInfo()
 
         except ApiException as e:
             await send_error_message(bot, f"Failed to get free-to-keep games. {e}")
