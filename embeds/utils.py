@@ -184,7 +184,9 @@ def generate_price_text(game: Game) -> str:
                     discount_percent = int(((price_original - price_current) / price_original) * 100)
                     price_text = f"~~{price_text}~~ **€{price_current:.2f}** (-{discount_percent}%)"
 
-    return " ".join([release_state_text, price_text])
+    final_text = " ".join([release_state_text, price_text]).strip()
+    final_text = final_text if final_text else "unknown"
+    return final_text
 
 
 def get_game_embed_field(game: Game):
