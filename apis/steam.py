@@ -78,8 +78,6 @@ async def get_steam_game_price(steam_game_id: int) -> Optional[dict]:
             if steam_game_data["is_free"]:
                 price_current = 0
                 price_original = 0
-            else:
-                log(f"Warning: is_free is False, but missing price_overview for game {game_name}.")
 
     steam_info = {
         "id": steam_game_data["steam_appid"],

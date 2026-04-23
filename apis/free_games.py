@@ -32,7 +32,6 @@ async def get_free_to_keep_games(bot: Bot) -> list[FreeGame]:
 
     payload = response.json()
     if payload["hasMore"] is True:
-        # TODO handle pagination
         await send_error_message(bot, "Warning: not all free-to-keep games fit in the response.")
 
     with db_session_scope() as db_session:
@@ -43,14 +42,16 @@ async def get_free_to_keep_games(bot: Bot) -> list[FreeGame]:
         game_deals_list = payload["list"]
         for game_deal in game_deals_list:
             deal_info = game_deal["deal"]
+            expiry_datetime = parser.isoparse(deal_info["expiry"]) if deal_info["expiry"] else None
+            game_type = GameType(game_deal["type"]) if game_deal["type"] else None
             # Save info on this deal in a new FreeGameData object
             free_game = FreeGame(
                 deal_id=game_deal["id"],
                 game_name=game_deal["title"],
                 shop_name=deal_info["shop"]["name"],
-                expiry_datetime=parser.isoparse(deal_info["expiry"]),
+                expiry_datetime=expiry_datetime,
                 url=deal_info["url"],
-                type=GameType(game_deal["type"]),
+                type=game_type,
             )
 
             free_games.append(free_game)

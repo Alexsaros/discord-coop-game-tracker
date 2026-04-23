@@ -18,9 +18,9 @@ class FreeGame(BaseModel):
     deal_id = Column(String, primary_key=True)
     game_name = Column(String, nullable=False)
     shop_name = Column(String, nullable=False)
-    expiry_datetime = Column(DateTime(timezone=True), nullable=False)   # type: datetime.datetime
+    expiry_datetime = Column(DateTime(timezone=True), nullable=True)    # type: datetime.datetime
     url = Column(String, nullable=False)
-    type = Column(Enum(GameType), nullable=False)   # type: GameType
+    type = Column(Enum(GameType), nullable=True)    # type: GameType
 
     def to_markdown(self):
         """
@@ -30,26 +30,28 @@ class FreeGame(BaseModel):
         """
         # Calculate how much time is left for this deal and add it to a presentable string
         expiry_string = ""
-        timestamp = int(self.expiry_datetime.timestamp())
-        formatted_time = f"<t:{timestamp}:f>"
-        expiry_string += formatted_time
-        time_until_expiry = self.expiry_datetime - datetime.datetime.now(self.expiry_datetime.tzinfo)
-        days_until_expiry = time_until_expiry.days
-        expiry_string += " ("
-        if days_until_expiry > 0:
-            expiry_string += f"{days_until_expiry} day"
-            if days_until_expiry != 1:
+        if self.expiry_datetime:
+            expiry_string = " until "
+            timestamp = int(self.expiry_datetime.timestamp())
+            formatted_time = f"<t:{timestamp}:f>"
+            expiry_string += formatted_time
+            time_until_expiry = self.expiry_datetime - datetime.datetime.now(self.expiry_datetime.tzinfo)
+            days_until_expiry = time_until_expiry.days
+            expiry_string += " ("
+            if days_until_expiry > 0:
+                expiry_string += f"{days_until_expiry} day"
+                if days_until_expiry != 1:
+                    expiry_string += "s"
+                expiry_string += " and "
+            hours_until_expiry = int(time_until_expiry.seconds / 3600)
+            expiry_string += f"{hours_until_expiry} hour"
+            if hours_until_expiry != 1:
                 expiry_string += "s"
-            expiry_string += " and "
-        hours_until_expiry = int(time_until_expiry.seconds / 3600)
-        expiry_string += f"{hours_until_expiry} hour"
-        if hours_until_expiry != 1:
-            expiry_string += "s"
-        expiry_string += " left)"
+            expiry_string += " left)"
 
         # Set up the the message
         message_text = f"**{self.game_name}**"
-        if self.type != GameType.GAME:
+        if self.type and self.type != GameType.GAME:
             message_text += f" (*{self.type.value.upper()}*)"
-        message_text += f" is free to keep on [{self.shop_name}](<{self.url}>) until {expiry_string}."
+        message_text += f" is free to keep on [{self.shop_name}](<{self.url}>){expiry_string}."
         return message_text
