@@ -38,11 +38,9 @@ class Backlog(commands.Cog):
     @commands.command(name="update_prices", help="Retrieves the latest prices from Steam. Example: !update_prices.")
     async def update_prices(self, ctx):
         log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
 
-        await update_steam_prices()
-
-        await update_live_messages(self.bot, server_id)
+        await update_database_steam_prices()
+        await update_all_lists(self.bot)
         await delete_message(ctx.message)
 
     @guild_only()
