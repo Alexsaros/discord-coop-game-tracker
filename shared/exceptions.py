@@ -16,6 +16,10 @@ class UserNotFoundException(BotException):
     pass
 
 
+class GuildNotFoundException(BotException):
+    pass
+
+
 class NoAccessException(BotException):
     pass
 

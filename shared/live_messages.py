@@ -21,8 +21,6 @@ async def get_live_message_object(bot: Bot, server_id: int, message_type: LiveMe
     """
     # Get the Discord guild object
     guild_object = await get_discord_guild_object(bot, server_id)
-    if guild_object is None:
-        return None
 
     with db_session_scope() as db_session:
         live_message = (
@@ -67,7 +65,7 @@ async def update_list(bot: Bot, server_id: int, page_number: int = None) -> None
             await send_error_message(bot, "update_list() has a list_message Discord message but suddenly can't find it in the database.")
             return None
 
-    list_embeds = (await generate_list_embeds(bot, server_id, live_message.selected_user_ids))
+    list_embeds = (await generate_list_embeds(server_id, live_message.selected_user_ids))
     if page_number is None:
         current_page = get_current_page_from_message_title(list_message.embeds[0].title)
         page_number = min(current_page, len(list_embeds))
@@ -95,7 +93,7 @@ async def update_hall_of_game(bot: Bot, server_id: int) -> None:
     if hog_message is None:
         return
 
-    updated_hog_embed = await generate_hog_embed(bot, server_id)
+    updated_hog_embed = await generate_hog_embed(server_id)
     try:
         if updated_hog_embed is not None:
             await hog_message.edit(embed=updated_hog_embed)

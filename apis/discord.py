@@ -3,6 +3,7 @@ from typing import Optional
 import discord
 from discord.ext.commands import Bot
 
+from shared.exceptions import GuildNotFoundException
 from shared.logger import log
 
 
@@ -13,7 +14,7 @@ async def get_discord_user(bot: Bot, user_id: int) -> discord.User:
     return user
 
 
-async def get_discord_guild_object(bot: Bot, server_id: int) -> Optional[discord.Guild]:
+async def get_discord_guild_object(bot: Bot, server_id: int) -> discord.Guild:
     """
     Gets Discord's guild object for the given server ID.
     Returns None if not found.
@@ -23,8 +24,7 @@ async def get_discord_guild_object(bot: Bot, server_id: int) -> Optional[discord
     if guild_object is None:
         guild_object = await bot.fetch_guild(server_id)
         if guild_object is None:
-            log(f"Discord could not find guild with ID {server_id}.")
-            return None
+            raise GuildNotFoundException(f"Discord could not find guild with ID {server_id}.")
     return guild_object
 
 
@@ -33,8 +33,6 @@ async def get_user_voice_channel(bot: Bot, user_id: int, server_id: int) -> Opti
     Returns the voice channel the user is in, or None if they're not in a voice channel or could not be found.
     """
     guild = await get_discord_guild_object(bot, server_id)
-    if guild is None:
-        return None
 
     user = guild.get_member(user_id)    # type: discord.Member
     if user is None:

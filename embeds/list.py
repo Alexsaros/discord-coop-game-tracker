@@ -1,9 +1,7 @@
 from typing import Optional
 
 import discord
-from discord.ext.commands import Bot
 
-from apis.discord import get_discord_guild_object
 from database.db import db_session_scope
 from database.models import Game, GameUserData, LiveMessageType, LiveMessage
 from database.utils import get_server_members
@@ -93,11 +91,7 @@ def generate_filter_embed(server_id: int) -> Optional[discord.Embed]:
     )
 
 
-async def generate_list_embeds(bot: Bot, server_id: int, selected_user_ids: list[int]) -> Optional[list[discord.Embed]]:
-    guild = await get_discord_guild_object(bot, server_id)
-    if guild is None:
-        return None
-
+async def generate_list_embeds(server_id: int, selected_user_ids: list[int]) -> Optional[list[discord.Embed]]:
     with db_session_scope() as db_session:
         games = (
             db_session.query(Game)

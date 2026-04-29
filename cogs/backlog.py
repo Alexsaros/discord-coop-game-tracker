@@ -212,7 +212,7 @@ class Backlog(commands.Cog):
         log(f"{ctx.author}: {ctx.message.content}")
         server_id = ctx.guild.id
 
-        hog_embed = await generate_hog_embed(self.bot, ctx.guild.id)
+        hog_embed = await generate_hog_embed(ctx.guild.id)
         if hog_embed is None:
             await ctx.send("Nothing to show (yet).")
             return
@@ -275,7 +275,7 @@ class Backlog(commands.Cog):
                 if list_live_message_old is not None:
                     db_session.delete(list_live_message_old)
 
-        list_embed = (await generate_list_embeds(self.bot, server_id, user_ids))[0]
+        list_embed = (await generate_list_embeds(server_id, user_ids))[0]
         if list_embed is None:
             # TODO this never happens anymore
             await ctx.send("No games registered for this server yet.")

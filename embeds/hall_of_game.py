@@ -1,7 +1,5 @@
 import discord
-from discord.ext.commands import Bot
 
-from apis.discord import get_discord_guild_object
 from constants import EMBED_MAX_CHARACTERS
 from database.db import db_session_scope
 from database.models import Game
@@ -12,11 +10,7 @@ from shared.logger import log
 HOG_EMBED_COLOR = discord.Color.blurple()
 
 
-async def generate_hog_embed(bot: Bot, server_id: int):
-    guild = await get_discord_guild_object(bot, server_id)
-    if guild is None:
-        return None
-
+async def generate_hog_embed(server_id: int):
     with db_session_scope() as db_session:
         # Get all finished games
         games = (
