@@ -274,10 +274,6 @@ class Backlog(commands.Cog):
                     db_session.delete(list_live_message_old)
 
         list_embed = (await generate_list_embeds(server_id, user_ids))[0]
-        if list_embed is None:
-            # TODO this never happens anymore
-            await ctx.send("No games registered for this server yet.")
-            return
         embeds = [list_embed]
         filter_embed = generate_filter_embed(server_id)
         if filter_embed is not None:

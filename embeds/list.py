@@ -91,7 +91,7 @@ def generate_filter_embed(server_id: int) -> Optional[discord.Embed]:
     )
 
 
-async def generate_list_embeds(server_id: int, selected_user_ids: list[int]) -> Optional[list[discord.Embed]]:
+async def generate_list_embeds(server_id: int, selected_user_ids: list[int]) -> list[discord.Embed]:
     with db_session_scope() as db_session:
         games = (
             db_session.query(Game)
