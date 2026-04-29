@@ -6,7 +6,7 @@ import asyncio
 import time
 import datetime
 from discord.ext import commands
-from discord.ext.commands import CommandInvokeError, NoPrivateMessage
+from discord.ext.commands import CommandInvokeError, NoPrivateMessage, CommandNotFound
 from dotenv import load_dotenv
 from apscheduler.triggers.cron import CronTrigger
 
@@ -137,6 +137,11 @@ async def on_command_error(ctx, error):
     # Check if the user tried to use a server command in a DM channel
     if isinstance(error, NoPrivateMessage):
         await ctx.send("This command can only be used in a server.")
+        return
+
+    # Someone typed an unknown command
+    if isinstance(error, CommandNotFound):
+        await ctx.send(f"{error.args[0]}.")
         return
 
     log("\nEncountered command error:")
