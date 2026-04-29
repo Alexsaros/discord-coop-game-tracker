@@ -140,6 +140,19 @@ async def generate_list_embeds(bot: Bot, server_id: int, selected_user_ids: list
             if price_text:
                 game_text += " " + price_text
 
+                if game.price_original != 0:
+                    # Check how many players still need to buy the game
+                    game_user_data_owned = (
+                        db_session.query(GameUserData)
+                            .filter(GameUserData.server_id == server_id)
+                            .filter(GameUserData.game_id == game.id)
+                            .filter(GameUserData.owned.is_(True))
+                            .all()
+                    )  # type: list[GameUserData]
+                    not_owned_count = len(members) - len(game_user_data_owned)
+                    if not_owned_count != 0:
+                        game_text += f" * {not_owned_count}"
+
             games_list.append(game_text)
 
         title_text = "Games list"
