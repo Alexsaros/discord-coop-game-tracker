@@ -3,7 +3,7 @@ from typing import Optional
 import discord
 
 from database.db import db_session_scope
-from database.models import Game, GameUserData, LiveMessageType, LiveMessage
+from database.models import Game, GameUserData, LiveMessageType, LiveMessage, ReleaseState
 from database.utils import get_server_members
 from embeds.utils import get_users_aliases_string, generate_price_text, EMOJIS, \
     sort_games_by_score_and_selected_users, filter_games_by_selected_users, sort_games_by_score
@@ -105,6 +105,10 @@ async def generate_list_embeds(server_id: int, selected_user_ids: list[int]) -> 
             excluded_user_ids = [member.user_id for member in members if member.user_id not in selected_user_ids]
 
             filtered_games = filter_games_by_selected_users(games, selected_user_ids, excluded_user_ids)
+
+            # Also filter out games that aren't released yet, as they can't be played at the moment
+            filtered_games = [game for game in filtered_games if game.release_state != ReleaseState.UNRELEASED]
+
             sorted_games = sort_games_by_score_and_selected_users(filtered_games, selected_user_ids, excluded_user_ids)
         else:
             sorted_games = sort_games_by_score(games, len(members))
