@@ -1,6 +1,6 @@
 import os
 
-import requests
+import aiohttp
 from discord.ext.commands import Bot
 from dotenv import load_dotenv
 
@@ -8,6 +8,7 @@ from dateutil import parser
 from shared.error_reporter import send_error_message
 from database.db import db_session_scope
 from database.models.free_game import FreeGame, GameType
+from shared.exceptions import ApiException
 
 load_dotenv()
 
@@ -19,20 +20,19 @@ async def get_free_to_keep_games(bot: Bot) -> list[FreeGame]:
     params = {
         "key": ITAD_API_KEY,
         "filter": "N4IgDgTglgxgpiAXKAtlAdk9BXANrgGhBQEMAPJABgF9qg",     # Only free games (up to 0 euro)
-        "mature": True,
+        "mature": "true",
     }
 
-    # TODO use aiohttp
-    response = requests.get(ITAD_DEALS_ENDPOINT, params=params)
-    try:
-        response.raise_for_status()
-    except Exception as e:
-        await send_error_message(bot, f"Failed to get free-to-keep games. {e}")
-        return []
+    async with aiohttp.ClientSession() as session:
+        response = await session.get(ITAD_DEALS_ENDPOINT, params=params)
+        try:
+            response.raise_for_status()
+        except Exception as e:
+            raise ApiException(f"Failed to get free-to-keep games. {e}", e)
 
-    payload = response.json()
-    if payload["hasMore"] is True:
-        await send_error_message(bot, "Warning: not all free-to-keep games fit in the response.")
+        payload = await response.json()
+        if payload["hasMore"] is True:
+            await send_error_message(bot, "Warning: not all free-to-keep games fit in the response.")
 
     with db_session_scope() as db_session:
         # Empty the free games table
