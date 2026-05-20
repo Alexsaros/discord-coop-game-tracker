@@ -35,10 +35,11 @@ async def get_steam_user_id(vanity_url: str) -> int:
         }
 
         response = await session.get(STEAM_RESOLVE_VANITY_URL_ENDPOINT, params=params)
+        response_body = await response.text()
         try:
             response.raise_for_status()
         except Exception as e:
-            raise ApiException(f"Failed to fetch Steam user ID. {e}", e)
+            raise ApiException(f"Failed to fetch Steam user ID. {response_body} {e}", e)
 
         payload = await response.json()
         steam_user_id = payload.get("response", {}).get("steamid", None)    # type: int
@@ -58,10 +59,11 @@ async def get_owned_steam_games(steam_user_id: int) -> dict[int, SteamGameInfo]:
         response = await session.get(STEAM_GET_OWNED_GAMES_ENDPOINT, params=params)
         if response.status == 400:
             raise UserNotFoundException(f"Could not find Steam user <https://steamcommunity.com/profiles/{steam_user_id}>.")
+        response_body = await response.text()
         try:
             response.raise_for_status()
         except Exception as e:
-            raise ApiException(f"Failed to fetch games for Steam user ID. {e}", e)
+            raise ApiException(f"Failed to fetch games for Steam user ID. {response_body} {e}", e)
 
         payload = await response.json()
         games = payload.get("response", {}).get("games", None)  # type: list

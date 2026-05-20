@@ -65,10 +65,11 @@ class IgdbApi:
         }
 
         response = await self.session.post(TWITCH_TOKEN_ENDPOINT, params=params)
+        response_body = await response.text()
         try:
             response.raise_for_status()
         except Exception as e:
-            raise ApiException(f"Failed to get Twitch access token. {e}", e)
+            raise ApiException(f"Failed to get Twitch access token. {response_body} {e}", e)
 
         payload = await response.json()
         access_token = payload.get("access_token")
@@ -81,10 +82,11 @@ class IgdbApi:
     async def get_game(self, game_name: str) -> dict:
         body = f'search "{game_name}"; fields name, multiplayer_modes; limit 10;'
         response = await self.session.post(IGDB_GAMES_ENDPOINT, headers=self.headers, data=body)
+        response_body = await response.text()
         try:
             response.raise_for_status()
         except Exception as e:
-            raise ApiException(f"Failed to get game from IGDB. {e}", e)
+            raise ApiException(f"Failed to get game from IGDB. {response_body} {e}", e)
 
         games = await response.json()
         if len(games) == 0:
@@ -102,10 +104,11 @@ class IgdbApi:
     async def get_multiplayer_info(self, multiplayer_modes: list[int]) -> MultiplayerInfo:
         body = f'fields campaigncoop, offlinecoop, offlinecoopmax, offlinemax, onlinecoopmax, onlinemax; where id = ({",".join(map(str, multiplayer_modes))});'
         response = await self.session.post(IGDB_MULTIPLAYER_MODES_ENDPOINT, headers=self.headers, data=body)
+        response_body = await response.text()
         try:
             response.raise_for_status()
         except Exception as e:
-            raise ApiException(f"Failed to get multiplayer modes from IGDB. {e}", e)
+            raise ApiException(f"Failed to get multiplayer modes from IGDB. {response_body} {e}", e)
 
         modes = await response.json()   # type: list[dict]
 

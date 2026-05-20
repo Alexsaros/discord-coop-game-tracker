@@ -25,10 +25,11 @@ async def get_free_to_keep_games(bot: Bot) -> list[FreeGame]:
 
     async with aiohttp.ClientSession() as session:
         response = await session.get(ITAD_DEALS_ENDPOINT, params=params)
+        response_body = await response.text()
         try:
             response.raise_for_status()
         except Exception as e:
-            raise ApiException(f"Failed to get free-to-keep games. {e}", e)
+            raise ApiException(f"Failed to get free-to-keep games. {response_body} {e}", e)
 
         payload = await response.json()
         if payload["hasMore"] is True:
