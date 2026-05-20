@@ -21,6 +21,7 @@ async def get_free_to_keep_games(bot: Bot) -> list[FreeGame]:
         "key": ITAD_API_KEY,
         "filter": "N4IgDgTglgxgpiAXKAtlAdk9BXANrgGhBQEMAPJABgF9qg",     # Only free games (up to 0 euro)
         "mature": "true",
+        "country": "NL",
     }
 
     async with aiohttp.ClientSession() as session:
