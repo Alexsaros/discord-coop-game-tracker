@@ -684,15 +684,16 @@ class GameSetup(BaseGameClass):
         unfilled_roles = [role for role, user_id in self.roles.items() if user_id == 0]
         random.shuffle(self.random_role)
         for user_id in self.random_role:
+            # TODO make this work for more than 4 players: add them to filled roles
             role = unfilled_roles.pop(0)
             self.roles[role] = user_id
 
-    async def send_new_message(self, ctx: Context):
+    async def send_new_message(self, interaction: Interaction):
         embed = await self.get_embed()
-        channel_id = ctx.channel.id
+        channel_id = interaction.channel.id
         view = self.GameSetupView(self, channel_id)
         self.message_custom_id_prefixes.append(channel_id)
-        message_object = await ctx.send(embed=embed, view=view)    # type: discord.Message
+        message_object = (await interaction.response.send_message(embed=embed, view=view)).resource   # type: discord.Message
         self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
         self.save_to_file()
         return message_object
@@ -787,15 +788,15 @@ class GameSetup(BaseGameClass):
             return True
 
 
-async def create_new_game(ctx: Context):
-    game_setup = GameSetup(ctx.bot)
-    await game_setup.send_new_message(ctx)
+async def create_new_game(interaction: Interaction):
+    game_setup = GameSetup(interaction.client)
+    await game_setup.send_new_message(interaction)
     return game_setup
 
 
-async def show_settings(ctx: Context):
-    user_id = str(ctx.author.id)
-    settings = UserSettings(ctx.bot, user_id)
+async def show_settings(interaction: Interaction):
+    user_id = str(interaction.user.id)
+    settings = UserSettings(interaction.client, user_id)
     await settings.send_message()
 
 

@@ -1,10 +1,9 @@
 import time
 
 import discord
+from discord import app_commands, Interaction
 from discord.ext import commands
-from discord.ext.commands import guild_only
 
-from apis.discord import delete_message
 from apis.igdb import get_multiplayer_info_from_igdb
 from apis.steam import get_steam_game_banner, get_steam_game_price, update_game_steam_prices_fields, \
     search_steam_for_game, update_database_steam_prices
@@ -34,24 +33,26 @@ class Backlog(commands.Cog):
         await update_database_steam_prices()
         await update_all_lists(self.bot)
 
-    @guild_only()
-    @commands.command(name="update_prices", help="Retrieves the latest prices from Steam. Example: !update_prices.")
-    async def update_prices(self, ctx):
-        log(f"{ctx.author}: {ctx.message.content}")
+    @app_commands.guild_only()
+    @app_commands.command(name="update_prices", description="Retrieves the latest prices from Steam. Gets called 4 times a day automatically.")
+    async def update_prices(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
 
         await update_database_steam_prices()
         await update_all_lists(self.bot)
-        await delete_message(ctx.message)
 
-    @guild_only()
-    @commands.command(name="add", help="Adds a new game to the list. Example: !add \"game name\".")
-    async def add_game(self, ctx, game_name):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+        await interaction.followup.send("Game prices updated.")
+
+    @app_commands.guild_only()
+    @app_commands.command(name="add", description="Adds a new game to the list.")
+    async def add_game(self, interaction: Interaction, game_name: str):
+        await interaction.response.defer(ephemeral=True)
+
+        server_id = interaction.guild.id
 
         try:
             int(game_name)
-            await ctx.send("Game name cannot be a number.")
+            await interaction.followup.send("Game name cannot be a number.", ephemeral=True)
             return
         except ValueError:
             pass
@@ -60,7 +61,7 @@ class Backlog(commands.Cog):
             try:
                 game = get_game(db_session, server_id, game_name, finished=True)
                 log(f"Game already finished: {str(game.name)}")
-                await ctx.send("This game has already been finished.")
+                await interaction.followup.send("This game has already been finished.")
                 return
             except GameNotFoundException:
                 pass
@@ -68,7 +69,7 @@ class Backlog(commands.Cog):
             try:
                 game = get_game(db_session, server_id, game_name)
                 log(f"Game already added: {str(game.name)}")
-                await ctx.send("This game has already been added.")
+                await interaction.followup.send("This game has already been added.")
                 return
             except GameNotFoundException:
                 last_game_id = (
@@ -79,11 +80,12 @@ class Backlog(commands.Cog):
                         .scalar()
                 )
                 game_id = (last_game_id + 1) if last_game_id is not None else 1
+                username = str(interaction.user)
                 game = Game(
                     server_id=server_id,
                     id=game_id,
                     name=game_name,
-                    submitter=str(ctx.author)
+                    submitter=username
                 )
 
             # Search Steam for this game and save the info
@@ -107,7 +109,7 @@ class Backlog(commands.Cog):
                         owned_games = await get_owned_steam_games(member.steam_id)
                         update_database_game_user_data(db_session, server_id, game.id, member.user_id, game.steam_id, owned_games)
                     except NoAccessException as e:
-                        await ctx.send(e.message)
+                        await interaction.followup.send(e.message)
 
             # Get multiplayer info from IGDB
             multiplayer_info = await get_multiplayer_info_from_igdb(self.bot, game_name)   # type: MultiplayerInfo
@@ -126,13 +128,12 @@ class Backlog(commands.Cog):
             db_session.add(game)
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.followup.send(f"Added game \"{game.name}\".")
 
-    @guild_only()
-    @commands.command(name="remove", help="Removes a game from the list. Example: !remove \"game name\".")
-    async def remove_game(self, ctx, game_name):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="remove", description="Removes a game from the list.")
+    async def remove_game(self, interaction: Interaction, game_name: str):
+        server_id = interaction.guild.id
 
         with db_session_scope() as db_session:
             game = get_game(db_session, server_id, game_name)
@@ -141,13 +142,14 @@ class Backlog(commands.Cog):
             db_session.delete(game)
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.response.send_message(f"Removed game \"{game.name}\".", ephemeral=True)
 
-    @guild_only()
-    @commands.command(name="finish", help="Marks a game as finished, moving it to the completed games list. Example: !finish \"game name\".")
-    async def finish_game(self, ctx, game_name):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="finish", description="Marks a game as finished, moving it to the completed games list.")
+    async def finish_game(self, interaction: Interaction, game_name: str):
+        await interaction.response.defer(ephemeral=True)
+
+        server_id = interaction.guild.id
 
         with db_session_scope() as db_session:
             game = get_game(db_session, server_id, game_name)
@@ -159,7 +161,7 @@ class Backlog(commands.Cog):
             if hog_message:
                 hog_channel = hog_message.channel
             else:
-                hog_channel = ctx.channel
+                hog_channel = interaction.channel
 
             game_text = game.name
             if game.steam_id is not None:
@@ -176,20 +178,21 @@ class Backlog(commands.Cog):
             await hog_channel.create_thread(name=f"{game.name} screenshots", type=discord.ChannelType.public_thread)
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.followup.send(f"Finished game \"{game.name}\".")
 
-    @guild_only()
-    @commands.command(name="enjoyed", help="Rate how much you enjoyed a game, between 0-10. Example: !enjoyed \"game name\" 7.5. Default rating is 5.")
-    async def enjoyed(self, ctx, game_name, score=5.0):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
-        user_id = ctx.author.id
+    @app_commands.guild_only()
+    @app_commands.command(name="enjoyed", description="Rate how much you enjoyed a game, between 0-10. Default rating is 5.")
+    async def enjoyed(self, interaction: Interaction, game_name: str, score: float):
+        await interaction.response.defer(ephemeral=True)
+
+        server_id = interaction.guild.id
+        user_id = interaction.user.id
 
         try:
             score = float(score)
             assert 0 <= score <= 10
         except (ValueError, AssertionError):
-            await ctx.send("Rating must be a number between 0 and 10.")
+            await interaction.followup.send("Rating must be a number between 0 and 10.")
             return
 
         with db_session_scope() as db_session:
@@ -202,20 +205,21 @@ class Backlog(commands.Cog):
             game_user_data.enjoyment_score = score
 
         await update_hall_of_game(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.followup.send(f"Rated game \"{game.name}\" a {score}.")
 
-    @guild_only()
-    @commands.command(name="hog", help=":boar:")
-    async def hall_of_game(self, ctx):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="hog", description=":boar:")
+    async def hall_of_game(self, interaction: Interaction):
+        await interaction.response.defer()
 
-        hog_embed = await generate_hog_embed(ctx.guild.id)
+        server_id = interaction.guild.id
+
+        hog_embed = await generate_hog_embed(server_id)
         if hog_embed is None:
-            await ctx.send("Nothing to show (yet).")
+            await interaction.followup.send("Nothing to show (yet).")
             return
 
-        message = await ctx.send(embed=hog_embed)   # type: discord.Message
+        message = await interaction.followup.send(embed=hog_embed, wait=True)   # type: discord.Message
 
         with db_session_scope() as db_session:
             hog_live_message = LiveMessage(
@@ -226,20 +230,19 @@ class Backlog(commands.Cog):
             )
             db_session.add(hog_live_message)
 
-        await delete_message(ctx.message)
+    @app_commands.guild_only()
+    @app_commands.command(name="vote", description="Sets your preference for playing a game, between 0-10. Default vote is 5.")
+    async def vote_game(self, interaction: Interaction, game_name: str, score: float):
+        await interaction.response.defer(ephemeral=True)
 
-    @guild_only()
-    @commands.command(name="vote", help="Sets your preference for playing a game, between 0-10. Example: !vote \"game name\" 7.5. Default vote is 5.")
-    async def vote_game(self, ctx, game_name, score=5.0):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
-        user_id = ctx.author.id
+        server_id = interaction.guild.id
+        user_id = interaction.user.id
 
         try:
             score = float(score)
             assert 0 <= score <= 10
         except (ValueError, AssertionError):
-            await ctx.send("Score must be a number between 0 and 10.")
+            await interaction.followup.send("Score must be a number between 0 and 10.")
             return
 
         with db_session_scope() as db_session:
@@ -252,13 +255,14 @@ class Backlog(commands.Cog):
             game_user_data.vote = score
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.followup.send(f"Voted {score} on game \"{game.name}\".")
 
-    @guild_only()
-    @commands.command(name="list", help="Displays a sorted list of all games. Example: !list.")
-    async def list_games(self, ctx):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="list", description="Displays a sorted list of all games.")
+    async def list_games(self, interaction: Interaction):
+        await interaction.response.defer()
+
+        server_id = interaction.guild.id
 
         user_ids = [member.user_id for member in get_server_members(server_id)]
 
@@ -282,7 +286,7 @@ class Backlog(commands.Cog):
         if unvoted_embed is not None:
             embeds.append(unvoted_embed)
 
-        list_message = await ctx.send(embeds=embeds)
+        list_message = await interaction.followup.send(embeds=embeds, wait=True)    # type: discord.Message
         list_view = ListView(self.bot, list_embed.title, list_message.id, update_list, server_id)
         await list_message.edit(embeds=embeds, view=list_view)
 
@@ -296,48 +300,42 @@ class Backlog(commands.Cog):
             )
             db_session.add(list_live_message)
 
-        await delete_message(ctx.message)
-
-    @guild_only()
-    @commands.command(name="owned_games", help="Displays a list of games that everyone has marked as owned. Example: !owned_games.")
-    async def display_owned_games(self, ctx):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="owned_games", description="Displays a list of games that everyone has marked as owned.")
+    async def display_owned_games(self, interaction: Interaction):
+        server_id = interaction.guild.id
 
         owned_games_embed = generate_owned_games_embed(server_id)
 
-        await ctx.send(embed=owned_games_embed)
-        await delete_message(ctx.message)
+        await interaction.response.send_message(embed=owned_games_embed)
 
-    @guild_only()
-    @commands.command(name="edit", help="Displays the given game as a message to be able edit it using its reactions. Example: !edit \"game name\".")
-    async def edit(self, ctx, game_name):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="edit", description="Displays the given game as a message to be able edit it using its reactions.")
+    async def edit(self, interaction: Interaction, game_name: str):
+        server_id = interaction.guild.id
 
         with db_session_scope() as db_session:
             game = get_game(db_session, server_id, game_name)
 
-        edit_game = EditGame(self.bot, game.server_id, game.id, ctx.channel.id)
+        edit_game = EditGame(self.bot, game.server_id, game.id, interaction)
         await edit_game.send_message()
 
-        await delete_message(ctx.message)
+    @app_commands.guild_only()
+    @app_commands.command(name="unvoted", description="Shows you which games you haven't voted on yet.")
+    async def unvoted(self, interaction: Interaction):
+        await interaction.response.defer(ephemeral=True)
 
-    @guild_only()
-    @commands.command(name="unvoted", help="Shows you which games you haven't voted on yet. Example: !unvoted.")
-    async def unvoted(self, ctx):
-        log(f"{ctx.author}: {ctx.message.content}")
-
-        unvoted_games = UnvotedGames(self.bot, ctx.guild, ctx.author)
+        unvoted_games = UnvotedGames(self.bot, interaction.guild, interaction.user)
         await unvoted_games.send_message()
 
-        await delete_message(ctx.message)
+        await interaction.followup.send("Sent the unvoted games embed as a private message.")
 
-    @guild_only()
-    @commands.command(name="add_note", help="Adds an informative note to a game. Example: !add_note \"game name\" \"PvP only\".")
-    async def add_note(self, ctx, game_name, note_text):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="add_note", description="Adds an informative note to a game.")
+    async def add_note(self, interaction: Interaction, game_name: str, note_text: str):
+        await interaction.response.defer(ephemeral=True)
+
+        server_id = interaction.guild.id
 
         with db_session_scope() as db_session:
             game = get_game(db_session, server_id, game_name)
@@ -345,37 +343,39 @@ class Backlog(commands.Cog):
             game.notes.append(note_text)
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.followup.send(f"Added note \"{note_text}\" to game \"{game.name}\".")
 
-    @guild_only()
-    @commands.command(name="remove_note", help="Removes a note from a game. Example: !remove_note \"game name\" \"PvP only\".")
-    async def remove_note(self, ctx, game_name, note_text):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="remove_note", description="Removes a note from a game.")
+    async def remove_note(self, interaction: Interaction, game_name: str, note_text: str):
+        await interaction.response.defer(ephemeral=True)
+
+        server_id = interaction.guild.id
 
         with db_session_scope() as db_session:
             game = get_game(db_session, server_id, game_name)
 
             if note_text not in game.notes:
-                await ctx.send(f"Game \"{game.name}\" does not have note \"{note_text}\".")
+                await interaction.followup.send(f"Game \"{game.name}\" does not have note \"{note_text}\".")
                 return
 
             game.notes.remove(note_text)
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.followup.send(f"Removed note \"{note_text}\" from game \"{game.name}\".")
 
-    @guild_only()
-    @commands.command(name="steam_id", help="Links a game to a steam ID for the purpose of retrieving prices. Example: !steam_id \"game name\" 105600.")
-    async def set_steam_id(self, ctx, game_name, steam_id):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="steam_id", description="Links a game to a steam ID for the purpose of retrieving prices.")
+    async def set_steam_id(self, interaction: Interaction, game_name: str, steam_id: int):
+        await interaction.response.defer(ephemeral=True)
+
+        server_id = interaction.guild.id
 
         try:
             steam_id = int(steam_id)
             assert steam_id >= 0
         except (ValueError, AssertionError):
-            await ctx.send("Steam ID must be a positive number.")
+            await interaction.followup.send("Steam ID must be a positive number.")
             return
 
         with db_session_scope() as db_session:
@@ -387,14 +387,15 @@ class Backlog(commands.Cog):
             update_game_steam_prices_fields(game, steam_game_info)
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.followup.send(f"Linked game \"{game.name}\" to Steam.")
 
-    @guild_only()
-    @commands.command(name="alias", help="Sets an alias for yourself, to be displayed in the list. Example: !alias :sunglasses:. Leave empty to clear it.")
-    async def set_alias(self, ctx, new_alias=None):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
-        user_id = ctx.author.id
+    @app_commands.guild_only()
+    @app_commands.command(name="alias", description="Sets an alias for yourself, to be displayed in the list. Leave empty to clear it.")
+    async def set_alias(self, interaction: Interaction, new_alias: str = None):
+        await interaction.response.defer(ephemeral=True)
+
+        server_id = interaction.guild.id
+        user_id = interaction.user.id
 
         with db_session_scope() as db_session:
             server_member = db_session.get(ServerMember, (user_id, server_id))  # type: ServerMember
@@ -402,13 +403,17 @@ class Backlog(commands.Cog):
             server_member.alias = new_alias
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        if new_alias is None:
+            await interaction.followup.send("Cleared your alias.")
+        else:
+            await interaction.followup.send(f"Set your alias to \"{new_alias}\".")
 
-    @guild_only()
-    @commands.command(name="rename", help="Change the name of a game. Example: !rename \"game name\" \"new game name\".")
-    async def rename_game(self, ctx, game_name, new_game_name):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
+    @app_commands.guild_only()
+    @app_commands.command(name="rename", description="Change the name of a game.")
+    async def rename_game(self, interaction: Interaction, game_name: str, new_game_name: str):
+        await interaction.response.defer(ephemeral=True)
+
+        server_id = interaction.guild.id
 
         with db_session_scope() as db_session:
             game = get_game(db_session, server_id, game_name)
@@ -416,14 +421,15 @@ class Backlog(commands.Cog):
             game.name = new_game_name
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.followup.send(f"Renamed game \"{game.name}\" to \"{new_game_name}\".")
 
-    @guild_only()
-    @commands.command(name="link_steam", help="Link your Steam account to automatically fetch owned and played games. Accepts a Steam profile ID or custom URL ID. Example: !link_steam 76561198071149263.")
-    async def link_steam_account(self, ctx, steam_profile_id):
-        log(f"{ctx.author}: {ctx.message.content}")
-        server_id = ctx.guild.id
-        user_id = ctx.author.id
+    @app_commands.guild_only()
+    @app_commands.command(name="link_steam", description="Link your Steam profile ID or custom URL ID to automatically mark games as owned or played.")
+    async def link_steam_account(self, interaction: Interaction, steam_profile_id: str):
+        await interaction.response.defer(ephemeral=True)
+
+        server_id = interaction.guild.id
+        user_id = interaction.user.id
 
         try:
             steam_user_id = int(steam_profile_id)
@@ -441,4 +447,4 @@ class Backlog(commands.Cog):
             update_database_games_with_steam_user_data(db_session, server_id, user_id, owned_games)
 
         await update_live_messages(self.bot, server_id)
-        await delete_message(ctx.message)
+        await interaction.followup.send(f"Linked steam account \"{steam_profile_id}\".")

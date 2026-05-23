@@ -6,7 +6,7 @@ from shared.exceptions import InvalidArgumentException
 
 def roll_dice(username: str, expression: str) -> str:
     if not re.fullmatch(r"[\d+\-*/().d\s]+", expression):
-        raise InvalidArgumentException(f"The entered dice rolls contains invalid characters.")
+        raise InvalidArgumentException(f"The entered dice rolls contain invalid characters.")
 
     # Ensure Discord doesn't try to parse the asterisks
     expression = expression.replace("*", "\\*")

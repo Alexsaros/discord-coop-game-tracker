@@ -5,8 +5,9 @@ import discord
 import asyncio
 import time
 import datetime
+
+from discord import app_commands
 from discord.ext import commands
-from discord.ext.commands import CommandInvokeError, NoPrivateMessage, CommandNotFound
 from dotenv import load_dotenv
 from apscheduler.triggers.cron import CronTrigger
 
@@ -30,6 +31,7 @@ from database.models.server_member import ServerMember
 from database.models.user import User
 from shared.scheduler import get_scheduler
 from bot_updater import start_listening_to_updates
+from shared.utils import reply
 
 load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -126,34 +128,44 @@ async def on_reaction_add(reaction, user):
 
 
 @bot.event
-async def on_command_error(ctx, error):
-    # If this was an intended exception, just send the exception message to the channel
-    if isinstance(error, CommandInvokeError):
+async def on_interaction(interaction):
+    if interaction.type == discord.InteractionType.application_command:
+        # Log which commands are called
+        command_called = "/" + interaction.command.name if interaction.command else "unknown command"
+        args = [f"{name}={value!r}" for name, value in interaction.namespace]
+
+        log(f"{interaction.user}: {command_called} {' '.join(args)}".strip())
+
+
+@bot.tree.error
+async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
+    print(f"Calling on error with {error}")
+    # If this was an intended exception, just send the exception message
+    if isinstance(error, app_commands.CommandInvokeError):
         if isinstance(error.original, BotException):
             log(error.original.message)
-            await ctx.send(error.original.message)
+            await reply(interaction, error.original.message)
             return
 
     # Check if the user tried to use a server command in a DM channel
-    if isinstance(error, NoPrivateMessage):
-        await ctx.send("This command can only be used in a server.")
+    if isinstance(error, app_commands.NoPrivateMessage):
+        await reply(interaction, "This command can only be used in a server.")
         return
 
     # Someone typed an unknown command
-    if isinstance(error, CommandNotFound):
-        await ctx.send(f"{error.args[0]}.")
+    if isinstance(error, app_commands.CommandNotFound):
+        await reply(interaction, f"{error.args[0]}.")
         return
 
     log("\nEncountered command error:")
     log(error)
     log(type(error))
-    await ctx.send(error)
+    await reply(interaction, "Command failed due to an unexpected error. 😵‍💫")
     timestamp = time.time()
     with open("err.log", "a", encoding="utf-8") as f:
         f.write(f"{timestamp}\n{error}\n{traceback.format_exception(error)}\n\n")
     traceback.print_exception(error)
     await send_error_message(error)
-    raise
 
 
 @bot.event

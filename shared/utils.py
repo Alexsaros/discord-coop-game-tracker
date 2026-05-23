@@ -1,3 +1,5 @@
+import discord
+
 from shared.exceptions import InvalidArgumentException
 
 
@@ -9,3 +11,10 @@ def parse_boolean(boolean_string):
         return False
     else:
         raise InvalidArgumentException(f"Received invalid argument ({boolean_string}). Must be either \"yes\" or \"no\".")
+
+
+async def reply(interaction: discord.Interaction, message: str, ephemeral: bool = True):
+    if interaction.response.is_done():
+        await interaction.followup.send(message, ephemeral=ephemeral)
+    else:
+        await interaction.response.send_message(message, ephemeral=ephemeral)

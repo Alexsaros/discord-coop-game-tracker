@@ -1,4 +1,5 @@
 import discord
+from discord import Interaction
 from discord.ext.commands import Bot
 from discord.ui import View, Button, Select
 from sqlalchemy.orm import Session
@@ -14,19 +15,18 @@ EDIT_GAME_EMBED_COLOR = discord.Color.dark_blue()
 
 class EditGame:
 
-    def __init__(self, bot: Bot, server_id: int, game_id: int, channel_id: int):
+    def __init__(self, bot: Bot, server_id: int, game_id: int, interaction: Interaction):
         self.bot = bot
         self.server_id = server_id
         self.game_id = game_id
-        self.channel_id = channel_id
+        self.interaction = interaction
         self.message_object = None
 
     async def send_message(self):
-        channel_object = await self.bot.fetch_channel(self.channel_id)
-
         game_embed = self.get_embed()
         game_view = self.EditGameView(self.bot, self)
-        self.message_object = await channel_object.send(embed=game_embed, view=game_view)    # type: discord.Message
+
+        self.message_object = (await self.interaction.response.send_message(embed=game_embed, view=game_view)).resource     # type: discord.Message
 
     async def update_message(self):
         game_embed = self.get_embed()
