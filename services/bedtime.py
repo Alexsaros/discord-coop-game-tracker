@@ -103,10 +103,12 @@ async def set_bedtime(bot: Bot, server_id: int, user_id: int, bedtime: str):
             except JobLookupError as e:
                 await send_error_message(bot, f"Error! Unable to remove scheduled late bedtime job with id {bedtime_old.scheduler_job_late_id}. {e}")
 
-        # If a negative value was given, remove the bedtime alarm
+            # Delete the old bedtime from the database
+            db_session.delete(bedtime_old)
+
+        # If a negative value was given, don't add a new bedtime alarm
         if hour < 0 or minute < 0:
-            if bedtime_old is not None:
-                db_session.delete(bedtime_old)
+            pass
         else:
             # Schedule the new bedtime
             job = get_scheduler().add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute),
@@ -120,9 +122,6 @@ async def set_bedtime(bot: Bot, server_id: int, user_id: int, bedtime: str):
             job_late = get_scheduler().add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late),
                                                args=[bot, user_id, server_id, True], id=f"{server_id}_bedtime_late_{user_id}")
 
-            # Delete the old bedtime
-            db_session.delete(bedtime_old)
-
             # Save the new bedtime
             bedtime_new = Bedtime(
                 user_id=user_id,
@@ -132,4 +131,3 @@ async def set_bedtime(bot: Bot, server_id: int, user_id: int, bedtime: str):
                 scheduler_job_late_id=job_late.id,
             )
             db_session.add(bedtime_new)
-
