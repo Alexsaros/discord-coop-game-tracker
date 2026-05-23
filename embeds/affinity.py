@@ -33,7 +33,7 @@ def generate_affinity_embed(server_id: int, user_id: int) -> discord.Embed:
                 if data.user_id == user_id:
                     continue
 
-                similarity_scores[data.user_id]["error_sum"] += abs(user_data.vote - data)
+                similarity_scores[data.user_id]["error_sum"] += abs(user_data.vote - data.vote)
                 similarity_scores[data.user_id]["votes"] += 1
 
         similarity_percentages = []
