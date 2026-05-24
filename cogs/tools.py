@@ -1,3 +1,6 @@
+import asyncio
+import random
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -5,7 +8,7 @@ from discord.ext import commands
 from services import bedtime
 from services.free_games import set_user_free_game_notifications
 from shared.error_reporter import send_error_message
-from shared.utils import parse_boolean
+from shared.utils import parse_boolean, reply
 
 
 class Tools(commands.Cog):
@@ -63,7 +66,7 @@ class Tools(commands.Cog):
         await interaction.response.send_message(f"Set bedtime to {bedtime_time}.", ephemeral=True)
 
     @commands.is_owner()
-    @commands.hybrid_command(name="sync")
+    @commands.hybrid_command(name="sync", description="Please don't use.")
     async def sync(self, ctx, globally=False):
         try:
             if globally:
@@ -74,3 +77,58 @@ class Tools(commands.Cog):
                 await ctx.send("Synced commands to guild.", ephemeral=True)
         except Exception as e:
             await send_error_message(self.bot, f"Error: failed to sync. {e}")
+
+    @app_commands.command(name="help", description="Shows all commands.")
+    async def help(self, interaction: discord.Interaction):
+        # 20% chance to send a spooky message
+        if random.randint(1, 5) == 1:
+            spooky_message = random.choice([
+                "Nobody can help you now...",
+                "Help is near... but so is something else.",
+                "It's too late for help now..."
+            ])
+
+            await interaction.response.send_message(spooky_message, ephemeral=True)
+            log(f"Sent spooky message: {spooky_message}")
+            await asyncio.sleep(2.5)
+
+            await interaction.delete_original_response()
+
+        # Splits messages if they're too big for a single message
+        paginator = commands.Paginator(prefix="```", suffix="```")
+
+        commands_by_cog = {}
+
+        for cmd in self.bot.tree.walk_commands():
+            # Only look at parent/main commands
+            if cmd.parent:
+                continue
+
+            category = getattr(cmd, "binding", None)
+            category = category.__class__.__name__ if category else "Commands"
+
+            # Add all commands under their category in the dictionary
+            commands_by_cog.setdefault(category, []).append(cmd)
+
+        # Create a block of commands for each category
+        for category, cmds in commands_by_cog.items():
+            paginator.add_line(category)
+
+            # Determine the length of the longest command name in this category
+            max_size = max(len(c.name) for c in cmds)
+
+            for cmd in sorted(cmds, key=lambda c: c.name):
+                desc = cmd.description or ""
+                # Ensure equal spacing between each command and their description
+                entry = f"  {cmd.name:<{max_size}} {desc}"
+
+                paginator.add_line(entry)
+
+            # Empty line after each category
+            paginator.add_line()
+
+        pages = paginator.pages
+
+        # Send pages
+        for page in pages:
+            await reply(interaction, page, ephemeral=False)

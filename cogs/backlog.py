@@ -181,7 +181,7 @@ class Backlog(commands.Cog):
         await interaction.followup.send(f"Finished game \"{game.name}\".")
 
     @app_commands.guild_only()
-    @app_commands.command(name="enjoyed", description="Rate how much you enjoyed a game, between 0-10. Default rating is 5.")
+    @app_commands.command(name="enjoyed", description="Rate how much you enjoyed a finished game, between 0-10. Default rating is 5.")
     async def enjoyed(self, interaction: Interaction, game_name: str, score: float):
         await interaction.response.defer(ephemeral=True)
 
@@ -310,7 +310,7 @@ class Backlog(commands.Cog):
         await interaction.response.send_message(embed=owned_games_embed)
 
     @app_commands.guild_only()
-    @app_commands.command(name="edit", description="Displays the given game as a message to be able edit it using its reactions.")
+    @app_commands.command(name="edit", description="Displays extra info on the given game and allows for editing it.")
     async def edit(self, interaction: Interaction, game_name: str):
         server_id = interaction.guild.id
 
