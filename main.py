@@ -18,7 +18,6 @@ from cogs.tools import Tools
 from cogs.toys import Toys
 from database.backup_service import create_backup
 from services.bedtime import load_bedtime_scheduler_jobs
-from services.help import CustomHelpCommand
 from shared import error_reporter
 from libraries import codenames
 from shared.exceptions import BotException
@@ -54,7 +53,7 @@ class DiscordBot(commands.Bot):
             await send_error_message(e)
 
 
-bot = DiscordBot(command_prefix="!", intents=intents, help_command=CustomHelpCommand())
+bot = DiscordBot(command_prefix="!", intents=intents)
 
 
 async def send_error_message(exception):
