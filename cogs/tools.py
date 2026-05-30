@@ -8,6 +8,7 @@ from discord.ext import commands
 from services import bedtime
 from services.free_games import set_user_free_game_notifications
 from shared.error_reporter import send_error_message
+from shared.logger import log
 from shared.utils import parse_boolean, reply
 
 
