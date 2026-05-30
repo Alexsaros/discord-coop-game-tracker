@@ -418,10 +418,11 @@ class Backlog(commands.Cog):
         with db_session_scope() as db_session:
             game = get_game(db_session, server_id, game_name)
 
+            old_game_name = game.name
             game.name = new_game_name
 
         await update_live_messages(self.bot, server_id)
-        await interaction.followup.send(f"Renamed game \"{game.name}\" to \"{new_game_name}\".")
+        await interaction.followup.send(f"Renamed game \"{old_game_name}\" to \"{new_game_name}\".")
 
     @app_commands.guild_only()
     @app_commands.command(name="link_steam", description="Link your Steam profile ID or custom URL ID to automatically mark games as owned or played.")
