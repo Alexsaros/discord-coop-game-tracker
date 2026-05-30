@@ -26,7 +26,7 @@ def load_bedtime_scheduler_jobs(bot: Bot):
         # Re-schedule each bedtime job
         hour = bedtime.bedtime_time.hour
         minute = bedtime.bedtime_time.minute
-        get_scheduler().add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[bot, bedtime.user_id, bedtime.server_id], id=bedtime.scheduler_job_id)
+        get_scheduler().add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute), args=[bot, bedtime.user_id, bedtime.server_id], id=bedtime.scheduler_job_id, replace_existing=True)
 
         # Re-schedule the late bedtime reminder as well
         bedtime_late_job_id = bedtime.scheduler_job_late_id
@@ -34,7 +34,7 @@ def load_bedtime_scheduler_jobs(bot: Bot):
         bedtime_late = bedtime_original + datetime.timedelta(minutes=BEDTIME_LATE_INTERVAL_MINUTES)
         hour_late = bedtime_late.hour
         minute_late = bedtime_late.minute
-        get_scheduler().add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[bot, bedtime.user_id, bedtime.server_id, True], id=bedtime_late_job_id)
+        get_scheduler().add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late), args=[bot, bedtime.user_id, bedtime.server_id, True], id=bedtime_late_job_id, replace_existing=True)
 
 
 async def play_audio(bot: Bot, voice_channel: discord.VoiceChannel, audio_path):
@@ -112,7 +112,7 @@ async def set_bedtime(bot: Bot, server_id: int, user_id: int, bedtime: str):
         else:
             # Schedule the new bedtime
             job = get_scheduler().add_job(play_bedtime_audio, CronTrigger(hour=hour, minute=minute),
-                                          args=[bot, user_id, server_id], id=f"{server_id}_bedtime_{user_id}")
+                                          args=[bot, user_id, server_id], id=f"{server_id}_bedtime_{user_id}", replace_existing=True)
 
             # Also schedule a later reminder
             bedtime_original = datetime.datetime.now().replace(hour=hour, minute=minute, second=0, microsecond=0)
@@ -120,7 +120,7 @@ async def set_bedtime(bot: Bot, server_id: int, user_id: int, bedtime: str):
             hour_late = bedtime_late.hour
             minute_late = bedtime_late.minute
             job_late = get_scheduler().add_job(play_bedtime_audio, CronTrigger(hour=hour_late, minute=minute_late),
-                                               args=[bot, user_id, server_id, True], id=f"{server_id}_bedtime_late_{user_id}")
+                                               args=[bot, user_id, server_id, True], id=f"{server_id}_bedtime_late_{user_id}", replace_existing=True)
 
             # Save the new bedtime
             bedtime_new = Bedtime(

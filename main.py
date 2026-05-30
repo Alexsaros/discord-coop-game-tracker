@@ -69,12 +69,8 @@ async def update_steam_prices() -> None:
 @bot.event
 async def on_connect():
     log(f"\n\n\n{datetime.datetime.now()}")
-    get_scheduler().start()
-
-    # Load scheduled jobs that were saved during earlier runs
-    load_bedtime_scheduler_jobs(bot)
-
-    codenames.load_games(bot)
+    if not get_scheduler().running:
+        get_scheduler().start()
 
     log("Finished on_connect()")
 
@@ -91,14 +87,19 @@ async def on_ready():
     # Check any free-to-keep games
     await check_free_to_keep_games(bot)
 
+    codenames.load_games(bot)
+
+    # Load scheduled bedtime jobs that were saved during earlier runs
+    load_bedtime_scheduler_jobs(bot)
+
     # Create a job to update the prices every 6 hours
-    get_scheduler().add_job(update_steam_prices, CronTrigger(hour="0,6,12,18"))
+    get_scheduler().add_job(update_steam_prices, CronTrigger(hour="0,6,12,18"), id="update_steam_prices", replace_existing=True)
     # Create a job to check for new free-to-keep games every 6 hours
-    get_scheduler().add_job(check_free_to_keep_games, CronTrigger(hour="7,19"), args=[bot])
+    get_scheduler().add_job(check_free_to_keep_games, CronTrigger(hour="7,19"), args=[bot], id="check_free_to_keep_games", replace_existing=True)
     # Create a job that makes a backup of the dataset every 12 hours
-    get_scheduler().add_job(create_backup, CronTrigger(hour="2,14"))
+    get_scheduler().add_job(create_backup, CronTrigger(hour="2,14"), id="create_backup", replace_existing=True)
     # Create a job that removes old Codenames games every day
-    get_scheduler().add_job(codenames.clean_up_old_games, CronTrigger(hour="18"), args=[bot])
+    get_scheduler().add_job(codenames.clean_up_old_games, CronTrigger(hour="18"), args=[bot], id="codenames_clean_up_old_games", replace_existing=True)
 
     log("Finished on_ready()")
 
