@@ -46,6 +46,7 @@ class Tools(commands.Cog):
                 return
 
     @app_commands.command(name="send_me_free_games", description="Opt in or out of receiving a message when a game is free to keep.")
+    @app_commands.rename(notify_on_free_game="enable_notifications")
     async def send_me_free_games(self, interaction: discord.Interaction, notify_on_free_game: str = "yes"):
         await interaction.response.defer(ephemeral=True)
 

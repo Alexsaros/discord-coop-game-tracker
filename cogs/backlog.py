@@ -132,6 +132,7 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="remove", description="Removes a game from the list.")
+    @app_commands.rename(game_name="game")
     async def remove_game(self, interaction: Interaction, game_name: str):
         server_id = interaction.guild.id
 
@@ -146,6 +147,7 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="finish", description="Marks a game as finished, moving it to the completed games list.")
+    @app_commands.rename(game_name="game")
     async def finish_game(self, interaction: Interaction, game_name: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -182,6 +184,7 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="enjoyed", description="Rate how much you enjoyed a finished game, between 0-10. Default rating is 5.")
+    @app_commands.rename(game_name="game")
     async def enjoyed(self, interaction: Interaction, game_name: str, score: float):
         await interaction.response.defer(ephemeral=True)
 
@@ -232,6 +235,7 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="vote", description="Sets your preference for playing a game, between 0-10. Default vote is 5.")
+    @app_commands.rename(game_name="game")
     async def vote_game(self, interaction: Interaction, game_name: str, score: float):
         await interaction.response.defer(ephemeral=True)
 
@@ -311,6 +315,7 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="edit", description="Displays extra info on the given game and allows for editing it.")
+    @app_commands.rename(game_name="game")
     async def edit(self, interaction: Interaction, game_name: str):
         server_id = interaction.guild.id
 
@@ -332,6 +337,7 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="add_note", description="Adds an informative note to a game.")
+    @app_commands.rename(game_name="game")
     async def add_note(self, interaction: Interaction, game_name: str, note_text: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -347,6 +353,7 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="remove_note", description="Removes a note from a game.")
+    @app_commands.rename(game_name="game")
     async def remove_note(self, interaction: Interaction, game_name: str, note_text: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -366,6 +373,7 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="steam_id", description="Links a game to a steam ID for the purpose of retrieving prices.")
+    @app_commands.rename(game_name="game")
     async def set_steam_id(self, interaction: Interaction, game_name: str, steam_id: int):
         await interaction.response.defer(ephemeral=True)
 
@@ -410,6 +418,10 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="rename", description="Change the name of a game.")
+    @app_commands.rename(
+        game_name="game",
+        new_game_name="new_name"
+    )
     async def rename_game(self, interaction: Interaction, game_name: str, new_game_name: str):
         await interaction.response.defer(ephemeral=True)
 

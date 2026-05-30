@@ -53,6 +53,7 @@ class Toys(commands.Cog):
         await interaction.response.send_message(message_text)
 
     @app_commands.command(name="roll", description="Performs the given dice rolls and shows the result (e.g. 2d8+3).")
+    @app_commands.rename(expression="dice_rolls")
     async def roll_dice(self, interaction: Interaction, expression: str):
         username = str(interaction.user)
 
