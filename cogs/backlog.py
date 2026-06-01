@@ -45,6 +45,7 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="add", description="Adds a new game to the list.")
+    @app_commands.describe(game_name="The name or ID of the game to add.")
     async def add_game(self, interaction: Interaction, game_name: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -133,6 +134,7 @@ class Backlog(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(name="remove", description="Removes a game from the list.")
     @app_commands.rename(game_name="game")
+    @app_commands.describe(game_name="The name or ID of the game to completely remove from the database.")
     async def remove_game(self, interaction: Interaction, game_name: str):
         server_id = interaction.guild.id
 
@@ -148,6 +150,7 @@ class Backlog(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(name="finish", description="Marks a game as finished, moving it to the completed games list.")
     @app_commands.rename(game_name="game")
+    @app_commands.describe(game_name="The name or ID of the game to mark as finished.")
     async def finish_game(self, interaction: Interaction, game_name: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -184,7 +187,14 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="enjoyed", description="Rate how much you enjoyed a finished game, between 0-10. Default rating is 5.")
-    @app_commands.rename(game_name="game")
+    @app_commands.rename(
+        game_name="game",
+        score="rating"
+    )
+    @app_commands.describe(
+        game_name="The name or ID of the game to rate.",
+        score="A decimal number between 0 and 10 indicating how much you enjoyed playing this game."
+    )
     async def enjoyed(self, interaction: Interaction, game_name: str, score: float):
         await interaction.response.defer(ephemeral=True)
 
@@ -235,7 +245,14 @@ class Backlog(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="vote", description="Sets your preference for playing a game, between 0-10. Default vote is 5.")
-    @app_commands.rename(game_name="game")
+    @app_commands.rename(
+        game_name="game",
+        score="vote"
+    )
+    @app_commands.describe(
+        game_name="The name or ID of the game to vote on.",
+        score="A decimal number between 0 and 10 indicating how much you want to play this game together."
+    )
     async def vote_game(self, interaction: Interaction, game_name: str, score: float):
         await interaction.response.defer(ephemeral=True)
 
@@ -316,6 +333,7 @@ class Backlog(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(name="edit", description="Displays extra info on the given game and allows for editing it.")
     @app_commands.rename(game_name="game")
+    @app_commands.describe(game_name="The name or ID of the game to edit.")
     async def edit(self, interaction: Interaction, game_name: str):
         server_id = interaction.guild.id
 
@@ -338,6 +356,10 @@ class Backlog(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(name="add_note", description="Adds an informative note to a game.")
     @app_commands.rename(game_name="game")
+    @app_commands.describe(
+        game_name="The name or ID of the game to add a note to.",
+        note_text="The contents of the note that should be added."
+    )
     async def add_note(self, interaction: Interaction, game_name: str, note_text: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -354,6 +376,10 @@ class Backlog(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(name="remove_note", description="Removes a note from a game.")
     @app_commands.rename(game_name="game")
+    @app_commands.describe(
+        game_name="The name or ID of the game to remove a note from.",
+        note_text="The exact contents of the note that should be removed."
+    )
     async def remove_note(self, interaction: Interaction, game_name: str, note_text: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -374,6 +400,10 @@ class Backlog(commands.Cog):
     @app_commands.guild_only()
     @app_commands.command(name="steam_id", description="Links a game to a steam ID for the purpose of retrieving prices.")
     @app_commands.rename(game_name="game")
+    @app_commands.describe(
+        game_name="The name or ID of the game that should be linked to Steam.",
+        steam_id="The game's Steam ID, which is the number in the URL of the game's store page."
+    )
     async def set_steam_id(self, interaction: Interaction, game_name: str, steam_id: int):
         await interaction.response.defer(ephemeral=True)
 
@@ -398,7 +428,8 @@ class Backlog(commands.Cog):
         await interaction.followup.send(f"Linked game \"{game.name}\" to Steam.")
 
     @app_commands.guild_only()
-    @app_commands.command(name="alias", description="Sets an alias for yourself, to be displayed in the list. Leave empty to clear it.")
+    @app_commands.command(name="alias", description="Sets an alias for yourself, to be displayed in the list.")
+    @app_commands.describe(new_alias="The new alias to use. Leave empty to remove your alias.")
     async def set_alias(self, interaction: Interaction, new_alias: str = None):
         await interaction.response.defer(ephemeral=True)
 
@@ -422,6 +453,10 @@ class Backlog(commands.Cog):
         game_name="game",
         new_game_name="new_name"
     )
+    @app_commands.describe(
+        game_name="The name or ID of the game to rename.",
+        new_game_name="The new name for the game."
+    )
     async def rename_game(self, interaction: Interaction, game_name: str, new_game_name: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -437,7 +472,8 @@ class Backlog(commands.Cog):
         await interaction.followup.send(f"Renamed game \"{old_game_name}\" to \"{new_game_name}\".")
 
     @app_commands.guild_only()
-    @app_commands.command(name="link_steam", description="Link your Steam profile ID or custom URL ID to automatically mark games as owned or played.")
+    @app_commands.command(name="link_steam", description="Link your Steam account to automatically mark games as owned or played.")
+    @app_commands.describe(steam_profile_id="Your Steam profile ID or custom URL ID.")
     async def link_steam_account(self, interaction: Interaction, steam_profile_id: str):
         await interaction.response.defer(ephemeral=True)
 

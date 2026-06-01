@@ -19,6 +19,7 @@ class Tools(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="kick", description="Kicks a member from the server.")
+    @app_commands.describe(member_name="The username of the member you want to kick.")
     async def kick(self, interaction: discord.Interaction, member_name: str):
         member_name = member_name.lower()
 
@@ -47,6 +48,7 @@ class Tools(commands.Cog):
 
     @app_commands.command(name="send_me_free_games", description="Opt in or out of receiving a message when a game is free to keep.")
     @app_commands.rename(notify_on_free_game="enable_notifications")
+    @app_commands.describe(notify_on_free_game="Whether to send a notification when a game become free to keep.")
     async def send_me_free_games(self, interaction: discord.Interaction, notify_on_free_game: str = "yes"):
         await interaction.response.defer(ephemeral=True)
 
@@ -59,6 +61,7 @@ class Tools(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="bedtime", description="Sets a reminder for your bedtime (CET).")
+    @app_commands.describe(bedtime_time="24-hour notation of the time to play a reminder at. A negative number disables it.")
     async def set_bedtime(self, interaction: discord.Interaction, bedtime_time: str):
         server_id = interaction.guild.id
         user_id = interaction.user.id
