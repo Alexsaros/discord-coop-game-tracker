@@ -19,6 +19,7 @@ from embeds.list_view import ListView
 from embeds.owned_games import generate_owned_games_embed
 from embeds.unvoted_games import UnvotedGames
 from shared.exceptions import NoAccessException, GameNotFoundException
+from shared.game_autocomplete import clear_game_cache, autocomplete_game
 from shared.live_messages import update_live_messages, update_list, get_live_message_object, update_hall_of_game, \
     update_all_lists
 from shared.logger import log
@@ -128,6 +129,8 @@ class Backlog(commands.Cog):
 
             db_session.add(game)
 
+            clear_game_cache(server_id)
+
         await update_live_messages(self.bot, server_id)
         await interaction.followup.send(f"Added game \"{game.name}\".")
 
@@ -135,6 +138,7 @@ class Backlog(commands.Cog):
     @app_commands.command(name="remove", description="Removes a game from the list.")
     @app_commands.rename(game_name="game")
     @app_commands.describe(game_name="The name or ID of the game to completely remove from the database.")
+    @app_commands.autocomplete(game_name=autocomplete_game())
     async def remove_game(self, interaction: Interaction, game_name: str):
         server_id = interaction.guild.id
 
@@ -144,6 +148,8 @@ class Backlog(commands.Cog):
             # Remove the game from the database
             db_session.delete(game)
 
+            clear_game_cache(server_id)
+
         await update_live_messages(self.bot, server_id)
         await interaction.response.send_message(f"Removed game \"{game.name}\".", ephemeral=True)
 
@@ -151,6 +157,7 @@ class Backlog(commands.Cog):
     @app_commands.command(name="finish", description="Marks a game as finished, moving it to the completed games list.")
     @app_commands.rename(game_name="game")
     @app_commands.describe(game_name="The name or ID of the game to mark as finished.")
+    @app_commands.autocomplete(game_name=autocomplete_game(finished=False))
     async def finish_game(self, interaction: Interaction, game_name: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -182,6 +189,8 @@ class Backlog(commands.Cog):
             await banner_message.create_thread(name=game.name)
             await hog_channel.create_thread(name=f"{game.name} screenshots", type=discord.ChannelType.public_thread)
 
+            clear_game_cache(server_id)
+
         await update_live_messages(self.bot, server_id)
         await interaction.followup.send(f"Finished game \"{game.name}\".")
 
@@ -195,6 +204,7 @@ class Backlog(commands.Cog):
         game_name="The name or ID of the game to rate.",
         score="A decimal number between 0 and 10 indicating how much you enjoyed playing this game."
     )
+    @app_commands.autocomplete(game_name=autocomplete_game(finished=True))
     async def enjoyed(self, interaction: Interaction, game_name: str, score: float):
         await interaction.response.defer(ephemeral=True)
 
@@ -253,6 +263,7 @@ class Backlog(commands.Cog):
         game_name="The name or ID of the game to vote on.",
         score="A decimal number between 0 and 10 indicating how much you want to play this game together."
     )
+    @app_commands.autocomplete(game_name=autocomplete_game(finished=False))
     async def vote_game(self, interaction: Interaction, game_name: str, score: float):
         await interaction.response.defer(ephemeral=True)
 
@@ -334,6 +345,7 @@ class Backlog(commands.Cog):
     @app_commands.command(name="edit", description="Displays extra info on the given game and allows for editing it.")
     @app_commands.rename(game_name="game")
     @app_commands.describe(game_name="The name or ID of the game to edit.")
+    @app_commands.autocomplete(game_name=autocomplete_game())
     async def edit(self, interaction: Interaction, game_name: str):
         server_id = interaction.guild.id
 
@@ -360,6 +372,7 @@ class Backlog(commands.Cog):
         game_name="The name or ID of the game to add a note to.",
         note_text="The contents of the note that should be added."
     )
+    @app_commands.autocomplete(game_name=autocomplete_game())
     async def add_note(self, interaction: Interaction, game_name: str, note_text: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -380,6 +393,7 @@ class Backlog(commands.Cog):
         game_name="The name or ID of the game to remove a note from.",
         note_text="The exact contents of the note that should be removed."
     )
+    @app_commands.autocomplete(game_name=autocomplete_game())
     async def remove_note(self, interaction: Interaction, game_name: str, note_text: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -404,6 +418,7 @@ class Backlog(commands.Cog):
         game_name="The name or ID of the game that should be linked to Steam.",
         steam_id="The game's Steam ID, which is the number in the URL of the game's store page."
     )
+    @app_commands.autocomplete(game_name=autocomplete_game())
     async def set_steam_id(self, interaction: Interaction, game_name: str, steam_id: int):
         await interaction.response.defer(ephemeral=True)
 
@@ -457,6 +472,7 @@ class Backlog(commands.Cog):
         game_name="The name or ID of the game to rename.",
         new_game_name="The new name for the game."
     )
+    @app_commands.autocomplete(game_name=autocomplete_game())
     async def rename_game(self, interaction: Interaction, game_name: str, new_game_name: str):
         await interaction.response.defer(ephemeral=True)
 
@@ -467,6 +483,8 @@ class Backlog(commands.Cog):
 
             old_game_name = game.name
             game.name = new_game_name
+
+            clear_game_cache(server_id)
 
         await update_live_messages(self.bot, server_id)
         await interaction.followup.send(f"Renamed game \"{old_game_name}\" to \"{new_game_name}\".")
