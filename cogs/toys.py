@@ -1,15 +1,22 @@
+import os
 import random
+from typing import Union
 
+import discord
 from discord.ext import commands
 from discord import app_commands, Interaction
+from dotenv import load_dotenv
 
-from database.utils import get_user_by_name
 from embeds.affinity import generate_affinity_embed
 from libraries.critters.critters import start_critters_game
 from services import dice_roller
 from services.eight_ball import use_eight_ball
 from services.horoscope import create_horoscope_embed
 from services.tarot.tarot import create_random_tarot_embed
+
+
+load_dotenv()
+BOT_ID = os.getenv("APP_ID")
 
 
 class Toys(commands.Cog):
@@ -61,20 +68,28 @@ class Toys(commands.Cog):
 
         await interaction.response.send_message(message_text)
 
-    @app_commands.command(name="critters", description="Start a Critters game against another user or against Cooper (by not giving a username).")
-    async def critters(self, interaction: Interaction, username: str = None):
+    @app_commands.command(name="critters", description="Start a Critters game against another user or against Cooper.")
+    @app_commands.describe(opponent="The opponent you want to play against.")
+    async def critters(self, interaction: Interaction, opponent: Union[discord.User, discord.Member]):
         await interaction.response.defer(ephemeral=True)
 
         user_id = interaction.user.id
 
         opponent_user_id = None
-        if username is not None:
-            opponent_user = get_user_by_name(username)
-            if opponent_user.id == user_id:
-                await interaction.followup.send("You can't play against yourself!")
-                return
 
-            opponent_user_id = opponent_user.id
+        # Can't play against other bots
+        if opponent.bot and opponent.id != BOT_ID:
+            await interaction.followup.send("You can't play against other bots.")
+            return
+
+        # Can't play against yourself
+        if opponent.id == user_id:
+            await interaction.followup.send("You can't play against yourself!")
+            return
+
+        # Check if we're playing against Cooper or a real user
+        if opponent.id != BOT_ID:
+            opponent_user_id = opponent.id
 
         await start_critters_game(self.bot, user_id, opponent_user_id)
 

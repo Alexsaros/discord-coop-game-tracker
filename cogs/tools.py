@@ -9,7 +9,7 @@ from services import bedtime
 from services.free_games import set_user_free_game_notifications
 from shared.error_reporter import send_error_message
 from shared.logger import log
-from shared.utils import parse_boolean, reply
+from shared.utils import reply
 
 
 class Tools(commands.Cog):
@@ -19,45 +19,38 @@ class Tools(commands.Cog):
 
     @app_commands.guild_only()
     @app_commands.command(name="kick", description="Kicks a member from the server.")
-    @app_commands.describe(member_name="The username of the member you want to kick.")
-    async def kick(self, interaction: discord.Interaction, member_name: str):
-        member_name = member_name.lower()
+    @app_commands.describe(member="The member you want to kick.")
+    async def kick(self, interaction: discord.Interaction, member: discord.Member):
 
-        if member_name in ["cooper", "cooper#0487"]:
+        if member.name == "Cooper":
             await interaction.response.send_message("Ouch! Stop kicking me! :cry:")
             return
 
-        if member_name == str(interaction.user):
+        if member == interaction.user:
             await interaction.response.send_message("Stop hitting yourself.")
             return
 
-        if member_name in ["alexsaro"]:
+        if member.name == "alexsaro":
             await interaction.response.send_message("Don't you try to kick my creator!")
             return
 
-        member_names = [member.name for member in interaction.guild.members if not member.bot]
-        if member_name not in member_names:
-            await interaction.response.send_message(f"Could not find member \"{member_name}\".")
+        if member.bot:
+            await interaction.response.send_message("You can't kick bots. Pick on your own kind instead.")
             return
 
-        for member in interaction.guild.members:
-            if member_name == member.name:
-                member_id = member.id
-                await interaction.response.send_message(f"Hey, <@{member_id}>. <@{interaction.user.id}> just tried to kick you. I'm sorry you had to find out this way.")
-                return
+        await interaction.response.send_message(f"Hey, <@{member.id}>. <@{interaction.user.id}> just tried to kick you. I'm sorry you had to find out this way.")
 
     @app_commands.command(name="send_me_free_games", description="Opt in or out of receiving a message when a game is free to keep.")
     @app_commands.rename(notify_on_free_game="enable_notifications")
-    @app_commands.describe(notify_on_free_game="Whether to send a notification when a game become free to keep.")
-    async def send_me_free_games(self, interaction: discord.Interaction, notify_on_free_game: str = "yes"):
+    @app_commands.describe(notify_on_free_game="Whether to send a notification when a game becomes free to keep.")
+    async def send_me_free_games(self, interaction: discord.Interaction, notify_on_free_game: bool = True):
         await interaction.response.defer(ephemeral=True)
 
         user_id = interaction.user.id
 
-        notify = parse_boolean(notify_on_free_game)
-        await set_user_free_game_notifications(self.bot, user_id, notify)
+        await set_user_free_game_notifications(self.bot, user_id, notify_on_free_game)
 
-        await interaction.followup.send(f"Set free game notifications to {notify}.")
+        await interaction.followup.send(f"Set free game notifications to {notify_on_free_game}.")
 
     @app_commands.guild_only()
     @app_commands.command(name="bedtime", description="Sets a reminder for your bedtime (CET).")

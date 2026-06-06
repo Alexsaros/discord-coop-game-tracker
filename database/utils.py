@@ -58,25 +58,3 @@ def get_game(db_session: Session, server_id: int, game_name: str, finished=False
                 raise GameNotFoundException(f"Could not find game with name \"{game_name}\". Use: !add \"game name\", to add a new game.")
 
         return game
-
-
-def get_user_by_name(username: str) -> User:
-    with db_session_scope() as db_session:
-        user = (
-            db_session.query(User)
-                .filter(User.username == username)
-                .first()
-        )  # type: User
-
-        if user is None:
-            user = (
-                db_session.query(User)
-                    .filter(User.global_name == username)
-                    .first()
-            )  # type: User
-
-    if user is None:
-        raise UserNotFoundException(f"Could not find user with username \"{username}\".")
-
-    return user
-
