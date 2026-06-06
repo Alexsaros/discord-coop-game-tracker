@@ -76,9 +76,10 @@ class Toys(commands.Cog):
         user_id = interaction.user.id
 
         opponent_user_id = None
+        is_cooper = str(opponent.id) == BOT_ID
 
         # Can't play against other bots
-        if opponent.bot and opponent.id != BOT_ID:
+        if opponent.bot and not is_cooper:
             await interaction.followup.send("You can't play against other bots.")
             return
 
@@ -88,7 +89,7 @@ class Toys(commands.Cog):
             return
 
         # Check if we're playing against Cooper or a real user
-        if opponent.id != BOT_ID:
+        if not is_cooper:
             opponent_user_id = opponent.id
 
         await start_critters_game(self.bot, user_id, opponent_user_id)
