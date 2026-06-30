@@ -92,12 +92,12 @@ class UnvotedGames:
 
                     if button_id == "next":
                         game = unvoted_games[0]
-                        edit_game = EditGame(self.bot, self.unvoted_games_object.server_id, game.id, dm_channel.id)
+                        edit_game = EditGame(self.bot, self.unvoted_games_object.server_id, game.id, interaction)
                         await edit_game.send_message()
 
                     elif button_id == "send_all":
                         for game in unvoted_games:
-                            edit_game = EditGame(self.bot, self.unvoted_games_object.server_id, game.id, dm_channel.id)
+                            edit_game = EditGame(self.bot, self.unvoted_games_object.server_id, game.id, interaction)
                             await edit_game.send_message()
 
             except Exception as e:
