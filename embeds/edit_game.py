@@ -26,7 +26,7 @@ class EditGame:
         game_embed = self.get_embed()
         game_view = self.EditGameView(self.bot, self)
 
-        self.message_object = (await self.interaction.followup.send(embed=game_embed, view=game_view)).resource     # type: discord.Message
+        self.message_object = await self.interaction.followup.send(embed=game_embed, view=game_view)     # type: discord.WebhookMessage
 
     async def update_message(self):
         game_embed = self.get_embed()

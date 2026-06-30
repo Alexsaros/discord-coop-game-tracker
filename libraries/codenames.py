@@ -693,7 +693,7 @@ class GameSetup(BaseGameClass):
         channel_id = interaction.channel.id
         view = self.GameSetupView(self, channel_id)
         self.message_custom_id_prefixes.append(channel_id)
-        message_object = (await interaction.response.send_message(embed=embed, view=view)).resource   # type: discord.Message
+        message_object = await interaction.followup.send(embed=embed, view=view)   # type: discord.WebhookMessage
         self.discord_messages.append(DiscordMessage(self.bot, message_object.channel.id, message_object.id))
         self.save_to_file()
         return message_object
