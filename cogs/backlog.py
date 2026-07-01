@@ -231,7 +231,7 @@ class Backlog(commands.Cog):
         await interaction.followup.send(f"Rated game \"{game.name}\" a {score}.")
 
     @app_commands.guild_only()
-    @app_commands.command(name="hog", description=":boar:")
+    @app_commands.command(name="hog", description="Mark a channel as \"hall of game\".")
     async def hall_of_game(self, interaction: Interaction):
         await interaction.response.defer()
 
@@ -347,6 +347,8 @@ class Backlog(commands.Cog):
     @app_commands.describe(game_name="The name or ID of the game to edit.")
     @app_commands.autocomplete(game_name=autocomplete_game())
     async def edit(self, interaction: Interaction, game_name: str):
+        await interaction.response.defer(ephemeral=True)
+
         server_id = interaction.guild.id
 
         with db_session_scope() as db_session:

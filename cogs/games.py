@@ -8,6 +8,8 @@ class Games(commands.Cog):
 
     @app_commands.command(name="codenames", description="Start a Codenames game.")
     async def start_codenames(self, interaction: Interaction):
+        await interaction.response.defer()
+
         await codenames.create_new_game(interaction)
 
     @app_commands.command(name="codenames_settings", description="Open the settings menu for Codenames.")

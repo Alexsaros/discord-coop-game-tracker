@@ -86,10 +86,6 @@ class UnvotedGames:
                         await interaction.followup.send("No unvoted games at the moment.", ephemeral=True)
                         return True
 
-                    dm_channel = self.unvoted_games_object.user.dm_channel
-                    if dm_channel is None:
-                        dm_channel = await self.unvoted_games_object.user.create_dm()
-
                     if button_id == "next":
                         game = unvoted_games[0]
                         edit_game = EditGame(self.bot, self.unvoted_games_object.server_id, game.id, interaction)
