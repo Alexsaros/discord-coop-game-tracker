@@ -36,7 +36,7 @@ def start_listening_to_updates(bot: Bot) -> WebhookUpdater:
                 ref="refs/heads/main",
                 checkout_path=personal_bot_path,
                 secret=get_required_env("PERSONAL_BOT_WEBHOOK_SECRET"),
-                post_pull_command=("pipenv", "sync", "--deploy"),
+                post_pull_command=("pipenv", "sync"),
             ),
             # Defines what to do when the shared code gets updated
             DeploymentTarget(
