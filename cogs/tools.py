@@ -10,12 +10,18 @@ from services.free_games import set_user_free_game_notifications
 from shared.error_reporter import send_error_message
 from shared.logger import log
 from shared.utils import reply
+from discord_coop_core import health_check
 
 
 class Tools(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+
+    @commands.is_owner()
+    @app_commands.command(name="core_health", description="Checks if the shared core package is reachable.")
+    async def core_health(self, interaction: discord.Interaction):
+        await interaction.response.send_message(health_check(), ephemeral=True)
 
     @app_commands.guild_only()
     @app_commands.command(name="kick", description="Kicks a member from the server.")

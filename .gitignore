@@ -1,6 +1,8 @@
-
 .env
+*.env.backup
 .idea
+__pycache__/
+*.pyc
 *.mp3
 err.log
 log.log
